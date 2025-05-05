@@ -1,5 +1,5 @@
-from Using_OpenMS import (
-    plot_3d_mz_dt_intensity,
+from Open_MS_config import (
+    plot_3d_mz_rt_intensity,
     extract_spectrum_data,
     handle_uploaded_file,
     select_file,
@@ -7,7 +7,7 @@ from Using_OpenMS import (
 import pandas as pd
 
 
-def run_peak_picking(df, mz_tol=0.01, rt_tol=2.0, dt_tol=1.0, intensity_thresh=10000.0):
+def run_peak_picking(df, mz_tol=0.01, rt_tol=2.0, dt_tol=1.0):
     """
     Cluster peaks and sum intensity within clusters.
 
@@ -22,7 +22,6 @@ def run_peak_picking(df, mz_tol=0.01, rt_tol=2.0, dt_tol=1.0, intensity_thresh=1
         A DataFrame of clustered peaks with summed intensity.
     """
     # Filter out low-intensity noise
-    df = df[df["Base Peak Intensity"] > intensity_thresh].copy()
 
     if df.empty:
         print("[WARNING] No data points above intensity threshold.")
@@ -65,6 +64,7 @@ def run_peak_picking(df, mz_tol=0.01, rt_tol=2.0, dt_tol=1.0, intensity_thresh=1
         )
         .reset_index(drop=True)
     )
+    summary = summary[summary["Intensity"] > 10000.0].reset_index(drop=True)
 
     return summary
 
@@ -80,7 +80,6 @@ if __name__ == "__main__":
         # Extract and display tabular data
         df = extract_spectrum_data(exp)
 
-        peak_df = run_peak_picking(df, mz_tol=0.1, rt_tol=1.0, intensity_thresh=10)
-        print(f"[INFO] Detected {len(peak_df)} peaks.")
-        plot_3d_mz_dt_intensity(peak_df)
-        peak_df.to_csv("clustered_peaks.csv", index=False)
+        peak_df = run_peak_picking(df, mz_tol=0.1, rt_tol=1.0, dt_tol=1.0)
+        plot_3d_mz_rt_intensity(peak_df)
+        peak_df.to_csv("data/peak_picking_output.csv", index=False)
