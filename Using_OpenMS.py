@@ -72,8 +72,7 @@ def extract_spectrum_data(exp):
 
     # Filter based on m/z and Drift Time ranges
     filtered_df = df[
-        (df["m/z"].between(850.45, 861.75))
-        & (df["Drift Time (ms)"].between(20.5, 42.5))
+        (df["m/z"].between(0, 1600)) & (df["Drift Time (ms)"].between(0, 60))
     ].reset_index(drop=True)
 
     if not filtered_df.empty:
@@ -188,17 +187,17 @@ def plot_3d_mz_dt_intensity(df):
 
     ax.scatter(
         df["m/z"],
-        df["Retention Time (sec)"],
-        df["Total Intensity"],
-        c=df["Total Intensity"],
+        df["Drift Time (ms)"],
+        df["Intensity"],
+        c=df["Intensity"],
         cmap="viridis",
         s=50,
     )
 
     ax.set_xlabel("m/z", labelpad=10)
-    ax.set_ylabel("Retention Time (sec)", labelpad=10)
-    ax.set_zlabel("Total Intensity", labelpad=10)
-    ax.set_title("3D Plot: m/z vs Drift Time vs Total Intensity")
+    ax.set_ylabel("Drift Time (ms)", labelpad=10)
+    ax.set_zlabel("Intensity", labelpad=10)
+    ax.set_title("3D Plot: m/z vs Drift Time vs Total Base Peak Intensity")
 
     plt.tight_layout()
     plt.show()
@@ -214,6 +213,5 @@ if __name__ == "__main__":
 
         # Extract and display tabular data
         df = extract_spectrum_data(exp)
-        collapsed_df = collapse_close_mz_values(df)
-
-        collapsed_df = plot_3d_mz_dt_intensity(collapsed_df)
+        print(df.head())
+        plot_3d_mz_dt_intensity(df)
