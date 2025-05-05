@@ -84,4 +84,5 @@ if __name__ == "__main__":
         peak_df = run_peak_picking(df, mz_tol=0.1, rt_tol=1.0, dt_tol=1.0)
         plot_3d_mz_rt_intensity(peak_df)
         plot_3d_mz_dt_intensity(peak_df)
-        peak_df.to_csv("data/peak_picking_output.csv", index=False)
+        output_path_for_csv = "data/peak_picking_output.csv"
+        peak_df.to_csv(output_path_for_csv, index=False)
