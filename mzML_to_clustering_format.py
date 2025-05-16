@@ -3,6 +3,7 @@ import numpy as np
 from scipy.sparse import coo_matrix, csr_matrix
 from numba import njit
 from sklearn.cluster import DBSCAN
+from Open_MS_config import select_file, handle_uploaded_file, extract_spectrum_data
 
 
 def calculate_CCS_for_mzML_files(df, beta, tfix):
@@ -136,18 +137,14 @@ def perform_optimized_clustering(df, sparse_matrix, eps_cutoff):
 
 if __name__ == "__main__":
     # Example Data - Ensure this is a DataFrame
-    df = {
-        "Spectrum Number": [1, 2, 3],
-        "Drift Time (ms)": [12.5, 12.5, 13.2],
-        "Retention Time (sec)": [300, 303, 310],
-        "m/z_ion": [1000, 1000.009, 520.3],
-        "Base Peak Intensity": [1000, 1200, 1100],
-        "CCS (Å^2)": [100, 100.5, 102],
-    }
+    file_path = select_file()
+    exp = handle_uploaded_file(file_path)
+    df = extract_spectrum_data(exp)
 
     df = pd.DataFrame(df)
     tfix = -0.067817
     beta = 0.138218
+    df = calculate_CCS_for_mzML_files(df, beta, tfix)
 
     eps_cutoff = 1.732050808  # Adjusted EPS cutoff value for three dimensions
     ppm_tolerance = 1e-5
