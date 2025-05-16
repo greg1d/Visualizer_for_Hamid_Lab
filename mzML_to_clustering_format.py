@@ -1,7 +1,8 @@
 import pandas as pd
 import numpy as np
-from scipy.sparse import coo_matrix
+from scipy.sparse import coo_matrix, csr_matrix
 from numba import njit
+from sklearn.cluster import DBSCAN
 
 
 def calculate_CCS_for_mzML_files(df, beta, tfix):
@@ -112,6 +113,27 @@ def create_distance_matrix_sparse(
     return sparse_matrix
 
 
+def perform_optimized_clustering(df, sparse_matrix, eps_cutoff):
+    """
+    Perform optimized DBSCAN clustering using the sparse distance matrix.
+    """
+    # Ensure the matrix is in CSR format (optimized for fast row access)
+    if not isinstance(sparse_matrix, csr_matrix):
+        sparse_matrix = sparse_matrix.tocsr()
+
+    # Use DBSCAN with precomputed metric
+    dbscan = DBSCAN(eps=eps_cutoff, min_samples=2, metric="precomputed", n_jobs=-1)
+    labels = dbscan.fit_predict(sparse_matrix)
+
+    # Display results
+    num_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+    print(f"Number of clusters: {num_clusters}")
+
+    # Add cluster labels to the DataFrame
+    df["Cluster"] = labels
+    return df
+
+
 if __name__ == "__main__":
     # Example Data - Ensure this is a DataFrame
     df = {
@@ -127,7 +149,7 @@ if __name__ == "__main__":
     tfix = -0.067817
     beta = 0.138218
 
-    eps_cutoff = 1.732  # Adjusted EPS cutoff value for three dimensions
+    eps_cutoff = 1.732050808  # Adjusted EPS cutoff value for three dimensions
     ppm_tolerance = 1e-5
     rt_tolerance = 30
     ccs_tolerance = 0.02
@@ -135,4 +157,5 @@ if __name__ == "__main__":
     sparse_matrix = create_distance_matrix_sparse(
         df, ppm_tolerance, rt_tolerance, ccs_tolerance, eps_cutoff
     )
-    print(sparse_matrix)
+    df = perform_optimized_clustering(df, sparse_matrix, eps_cutoff)
+    print(df)
