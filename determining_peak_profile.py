@@ -1,109 +1,184 @@
 import hashlib
 import os
+import sqlite3
 
-import matplotlib.pyplot as plt
 import pandas as pd
 
-from implementing_SQL import (
-    exclude_noise_points,
-    pick_a_cluster_for_debugging,
-)
 from mzML_to_clustering_format import (
     calculate_CCS_for_mzML_files,
+    create_distance_matrix_sparse,
+    perform_optimized_clustering,
 )
 from Open_MS_config import extract_spectrum_data, handle_uploaded_file, select_file
 
 
-# Ensure the .temp directory exists
+def sum_base_peak_intensity_per_cluster(df):
+    if "Cluster" not in df.columns:
+        raise ValueError("DataFrame must contain 'Cluster' column.")
+
+    cluster_sums = df.groupby("Cluster")["Base Peak Intensity"].sum().reset_index()
+    cluster_sums = cluster_sums.rename(
+        columns={"Base Peak Intensity": "Total Base Peak Intensity"}
+    )
+
+    df = pd.merge(df, cluster_sums, on="Cluster", how="left")
+    return df
+
+
 def ensure_temp_directory():
     temp_dir = ".temp"
     os.makedirs(temp_dir, exist_ok=True)
     return temp_dir
 
 
-def get_cache_file_path(
+def generate_cache_key(
     file_path, tfix, beta, ppm_tolerance, rt_tolerance, ccs_tolerance
 ):
-    """
-    Generate a unique cache file path based on file name and parameters.
-    """
-    # Generate a unique hash for the file based on its path and processing parameters
-    hash_input = (
+    param_string = (
         f"{file_path}_{tfix}_{beta}_{ppm_tolerance}_{rt_tolerance}_{ccs_tolerance}"
     )
-    file_hash = hashlib.md5(hash_input.encode()).hexdigest()
-    return os.path.join(ensure_temp_directory(), f"df_cache_{file_hash}.pkl")
+    return hashlib.md5(param_string.encode()).hexdigest()
 
 
-def load_or_reprocess_data(
+def load_or_process_data(
     file_path, tfix, beta, ppm_tolerance, rt_tolerance, ccs_tolerance
 ):
-    """
-    Load cached data if it exists, otherwise reprocess the data and cache it.
-    """
-    cache_file_path = get_cache_file_path(
+    temp_dir = ensure_temp_directory()
+    db_path = os.path.join(temp_dir, "processed_data.db")
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS processed_data (
+            file_hash TEXT PRIMARY KEY,
+            data BLOB
+        )
+    """)
+
+    cache_key = generate_cache_key(
         file_path, tfix, beta, ppm_tolerance, rt_tolerance, ccs_tolerance
     )
+    cursor.execute("SELECT data FROM processed_data WHERE file_hash = ?", (cache_key,))
+    result = cursor.fetchone()
 
-    # Check if the cached file exists
-    if os.path.exists(cache_file_path):
-        print(f"Loading cached data from {cache_file_path}...")
-        df = pd.read_pickle(cache_file_path)
+    if result:
+        print("Loading processed data from cache...")
+        df_pickle_path = result[0]
+        try:
+            df = pd.read_pickle(df_pickle_path)
+            print("Cached data loaded successfully.")
+        except (FileNotFoundError, Exception):
+            print("Cache file not found or corrupted. Reprocessing...")
+            df = reprocess_and_cache(
+                file_path,
+                tfix,
+                beta,
+                ppm_tolerance,
+                rt_tolerance,
+                ccs_tolerance,
+                temp_dir,
+                cache_key,
+                cursor,
+                conn,
+            )
     else:
-        print("Cached file not found or removed. Reprocessing data...")
-        exp = handle_uploaded_file(file_path)
-        df = extract_spectrum_data(exp)
-        df = pd.DataFrame(df)
+        print("Processing data...")
+        df = reprocess_and_cache(
+            file_path,
+            tfix,
+            beta,
+            ppm_tolerance,
+            rt_tolerance,
+            ccs_tolerance,
+            temp_dir,
+            cache_key,
+            cursor,
+            conn,
+        )
 
-        # Apply calculations
-        df = calculate_CCS_for_mzML_files(df, beta, tfix)
-
-        # Save the processed data to the cache
-        df.to_pickle(cache_file_path)
-        print(f"Processed data cached to {cache_file_path}.")
-
+    conn.close()
     return df
 
 
-def plot_3d_cluster(df):
-    """
-    Plot a 3D scatter plot for a selected cluster.
+def reprocess_and_cache(
+    file_path,
+    tfix,
+    beta,
+    ppm_tolerance,
+    rt_tolerance,
+    ccs_tolerance,
+    temp_dir,
+    cache_key,
+    cursor,
+    conn,
+):
+    exp = handle_uploaded_file(file_path)
+    df = extract_spectrum_data(exp)
+    df = pd.DataFrame(df)
 
-    Parameters:
-    df (pd.DataFrame): DataFrame containing the cluster data with m/z_ion, CCS, and Cluster Relative Intensity.
-    """
-    fig = plt.figure(figsize=(10, 7))
-    ax = fig.add_subplot(111, projection="3d")
+    df = calculate_CCS_for_mzML_files(df, beta, tfix)
 
-    # Scatter plot
-    scatter = ax.scatter(
-        df["m/z_ion"],
-        df["CCS (Å^2)"],
-        df["Cluster Relative Intensity"],
-        c=df["Cluster Relative Intensity"],
-        cmap="viridis",
-        alpha=0.7,
-        marker="o",
+    sparse_matrix = create_distance_matrix_sparse(
+        df, ppm_tolerance, rt_tolerance, ccs_tolerance
     )
+    df = perform_optimized_clustering(df, sparse_matrix)
+    df = sum_base_peak_intensity_per_cluster(df)
 
-    # Add color bar
-    cbar = plt.colorbar(scatter, ax=ax, shrink=0.5, aspect=10)
-    cbar.set_label("Cluster Relative Intensity")
+    df_pickle_path = os.path.join(temp_dir, f"df_cache_{cache_key}.pkl")
+    df.to_pickle(df_pickle_path)
+    cursor.execute(
+        "INSERT OR REPLACE INTO processed_data (file_hash, data) VALUES (?, ?)",
+        (cache_key, df_pickle_path),
+    )
+    conn.commit()
+    print(f"Processed data cached to {df_pickle_path}.")
+    return df
 
-    # Axis labels
-    ax.set_xlabel("m/z_ion")
-    ax.set_ylabel("CCS (Å^2)")
-    ax.set_zlabel("Cluster Relative Intensity")
-    ax.set_title("3D Plot of Cluster Relative Intensity")
 
-    plt.show()
+def exclude_noise_points(df, exclude_noise=True):
+    if exclude_noise:
+        df = df[df["Cluster"] != -1].reset_index(drop=True)
+    return df
+
+
+def extract_cluster_by_criteria(
+    df,
+    mz_target,
+    dt_target,
+    rt_target,
+    mz_tolerance=0.1,
+    dt_tolerance=1,
+    rt_tolerance=50,
+):
+    """
+    Extract a cluster that matches the specified m/z, DT, and RT criteria.
+    """
+    cluster_candidates = df[
+        (df["m/z_ion"].between(mz_target - mz_tolerance, mz_target + mz_tolerance))
+        & (df["DT"].between(dt_target - dt_tolerance, dt_target + dt_tolerance))
+        & (
+            df["Retention Time (sec)"].between(
+                rt_target - rt_tolerance, rt_target + rt_tolerance
+            )
+        )
+    ]
+
+    if cluster_candidates.empty:
+        print("No clusters found matching the criteria.")
+        return pd.DataFrame()
+
+    # Find the most representative cluster among the candidates
+    selected_cluster = cluster_candidates["Cluster"].mode().iloc[0]
+    cluster_df = df[df["Cluster"] == selected_cluster]
+    print(f"Extracted Cluster: {selected_cluster} with {len(cluster_df)} rows.")
+    return cluster_df
 
 
 if __name__ == "__main__":
     # User-Editable Parameters
     tfix = -0.067817
     beta = 0.138218
-    exclude_noise_flag = True  # Set this to True to exclude noise points (Cluster -1)
+    exclude_noise_flag = True
 
     # Example Data - Ensure this is a DataFrame
     file_path = select_file()
@@ -111,16 +186,24 @@ if __name__ == "__main__":
     rt_tolerance = 30
     ccs_tolerance = 0.02
 
-    # Load or reprocess data (cache or reprocess if removed)
-    df = load_or_reprocess_data(
+    # Load or process the data (caching with SQLite in .temp)
+    df = load_or_process_data(
         file_path, tfix, beta, ppm_tolerance, rt_tolerance, ccs_tolerance
     )
 
     # Optionally exclude noise points
     df = exclude_noise_points(df, exclude_noise=exclude_noise_flag)
 
-    # Debugging: Extract the 50th largest cluster for analysis
-    df = pick_a_cluster_for_debugging(df)
+    # Extract cluster by specified criteria
+    cluster_df = extract_cluster_by_criteria(
+        df,
+        mz_target=704.5227,
+        dt_target=33.7,
+        rt_target=300,
+        mz_tolerance=0.1,
+        dt_tolerance=1,
+        rt_tolerance=50,
+    )
 
-    # Plot the 3D scatter plot
-    plot_3d_cluster(df)
+    print("\nExtracted Cluster by Criteria:")
+    print(cluster_df)

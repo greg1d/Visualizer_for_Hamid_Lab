@@ -197,8 +197,10 @@ def pick_a_cluster_for_debugging(df):
     if not df.empty:
         cluster_sizes = df["Cluster"].value_counts().sort_values(ascending=False)
 
-        if len(cluster_sizes) >= 50:
-            target_cluster = cluster_sizes.index[49]  # 50th largest cluster (0-indexed)
+        if len(cluster_sizes) >= 500:
+            target_cluster = cluster_sizes.index[
+                499
+            ]  # 50th largest cluster (0-indexed)
             cluster_df = df[df["Cluster"] == target_cluster]
             return cluster_df
     return pd.DataFrame()
