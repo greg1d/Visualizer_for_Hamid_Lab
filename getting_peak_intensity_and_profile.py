@@ -43,15 +43,14 @@ if __name__ == "__main__":
     beta = 0.138218
     df = calculate_CCS_for_mzML_files(df, beta, tfix)
 
-    eps_cutoff = 1.732050808  # Adjusted EPS cutoff value for three dimensions
     ppm_tolerance = 1e-5
     rt_tolerance = 30
     ccs_tolerance = 0.02
 
     sparse_matrix = create_distance_matrix_sparse(
-        df, ppm_tolerance, rt_tolerance, ccs_tolerance, eps_cutoff
+        df, ppm_tolerance, rt_tolerance, ccs_tolerance
     )
-    df = perform_optimized_clustering(df, sparse_matrix, eps_cutoff)
+    df = perform_optimized_clustering(df, sparse_matrix)
 
     # Sum Base Peak Intensity for each cluster
     df = sum_base_peak_intensity_per_cluster(df)
