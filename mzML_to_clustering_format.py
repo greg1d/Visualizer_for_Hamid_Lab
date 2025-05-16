@@ -62,6 +62,11 @@ def calculate_distance_block(
         mz_dist = mz_diff / (mz_values[i] * ppm_tolerance)
         rt_dist = rt_diff / rt_tolerance
         ccs_dist = ccs_diff / (ccs_values[i] * ccs_tolerance)
+        valid_mask = (mz_dist <= 1.1) & (rt_dist <= 1.1) & (ccs_dist <= 1.1)
+        # Only retain valid distances
+        mz_dist = mz_dist[valid_mask]
+        rt_dist = rt_dist[valid_mask]
+        ccs_dist = ccs_dist[valid_mask]
 
         dist_row = np.sqrt(mz_dist**2 + rt_dist**2 + ccs_dist**2)
         below_cutoff = dist_row <= eps_cutoff
@@ -112,10 +117,10 @@ if __name__ == "__main__":
     df = {
         "Spectrum Number": [1, 2, 3],
         "Drift Time (ms)": [12.5, 12.5, 13.2],
-        "Retention Time (sec)": [300, 332, 310],
-        "m/z_ion": [1000, 1000.01, 520.3],
+        "Retention Time (sec)": [300, 303, 310],
+        "m/z_ion": [1000, 1000.009, 520.3],
         "Base Peak Intensity": [1000, 1200, 1100],
-        "CCS (Å^2)": [100, 100, 102],
+        "CCS (Å^2)": [100, 100.5, 102],
     }
 
     df = pd.DataFrame(df)
