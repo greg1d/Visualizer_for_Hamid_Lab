@@ -38,28 +38,21 @@ def calculate_CCS_for_mzML_files(df, beta, tfix):
 from scipy.sparse import coo_matrix
 
 
-def create_condensed_distance_matrix(
-    df,
+import numpy as np
+from scipy.sparse import coo_matrix, csr_matrix
+
+def create_distance_matrix_sparse(
     ppm_tolerance=1e-5,
     rt_tolerance=0.5,
     ccs_tolerance=0.02,
-    eps_cutoff=3,
+    eps_cutoff=None  # Only store distances below this cutoff
 ):
     """
-    Create a sparse distance matrix for large datasets using block-wise calculations.
-
-    Parameters:
-    df (pd.DataFrame): DataFrame containing m/z, RT, and CCS values.
-    ppm_tolerance (float): Tolerance for m/z differences (ppm).
-    rt_tolerance (float): Tolerance for RT differences (seconds).
-    ccs_tolerance (float): Tolerance for CCS differences.
-    eps_cutoff (float): Distance cutoff for sparse storage.
-    block_size (int): Number of rows to process in each block for memory efficiency.
-
-    Returns:
-    csr_matrix: Sparse distance matrix (CSR format).
+    Create a sparse distance matrix for large datasets using vectorized calculations.
     """
-    
+    mz_values = df["m/z_ion"].values
+    rt_values = df["Retention Time (sec)"].values
+    ccs_values = df["CCS (Å^2)"].values
     mz_values = np.array(mz_values)
     rt_values = np.array(rt_values)
     ccs_values = np.array(ccs_values)
@@ -69,43 +62,40 @@ def create_condensed_distance_matrix(
     col_indices = []
     dist_values = []
 
-    # Process in blocks for memory efficiency
-    for i in range(0, n, block_size):
-        end = min(i + block_size, n)
+    # Use vectorized calculations to compute all pairwise differences
+    for i in range(n):
+        mz_diff = np.abs(mz_values[i] - mz_values)
+        rt_diff = np.abs(rt_values[i] - rt_values)
+        ccs_diff = np.abs(ccs_values[i] - ccs_values)
 
-        # Current block values
-        mz_block = mz_values[i:end]
-        rt_block = rt_values[i:end]
-        ccs_block = ccs_values[i:end]
+        mz_dist = mz_diff / (mz_values[i] * ppm_tolerance)
+        rt_dist = rt_diff / rt_tolerance
+        ccs_dist = ccs_diff / (ccs_values[i] * ccs_tolerance)
 
-        # Broadcast differences within the block to all other values
-        for j in range(n):
-            mz_diff = np.abs(mz_block - mz_values[j])
-            rt_diff = np.abs(rt_block - rt_values[j])
-            ccs_diff = np.abs(ccs_block - ccs_values[j])
+        dist_row = np.sqrt(mz_dist ** 2 + rt_dist ** 2 + ccs_dist ** 2)
 
-            mz_dist = mz_diff / (mz_values[i] * ppm_tolerance)
-            rt_dist = rt_diff / rt_tolerance
-            ccs_dist = ccs_diff / (ccs_values[i] * ccs_tolerance)
-
-            dist_row = np.sqrt(mz_dist**2 + rt_dist**2 + ccs_dist**2)
-
-            # Apply eps_cutoff
-            mask = dist_row <= eps_cutoff
-            rows_in_block = np.arange(i, end)[mask]
-            row_indices.extend(rows_in_block)
-            col_indices.extend([j] * len(rows_in_block))
-            dist_values.extend(dist_row[mask])
+        # Apply the cutoff directly using a boolean mask
+        if eps_cutoff is not None:
+            below_cutoff = dist_row <= eps_cutoff
+            non_zero_indices = np.where(below_cutoff)[0]
+            row_indices.extend([i] * len(non_zero_indices))
+            col_indices.extend(non_zero_indices)
+            dist_values.extend(dist_row[non_zero_indices])
+        else:
+            row_indices.extend([i] * n)
+            col_indices.extend(range(n))
+            dist_values.extend(dist_row)
 
     # Create a sparse matrix using COOrdinate format (efficient for construction)
     sparse_matrix = coo_matrix(
-        (dist_values, (row_indices, col_indices)), shape=(n, n), dtype=np.float32
+        (dist_values, (row_indices, col_indices)),
+        shape=(n, n),
+        dtype=np.float32
     ).tocsr()
 
-    print(
-        f"Sparse matrix created with {sparse_matrix.count_nonzero()} non-zero elements."
-    )
+    print(f"Non-zero elements of the sparse distance matrix: {sparse_matrix.count_nonzero()}")
     return sparse_matrix
+
 
 
 def perform_clustering(df, ppm_tolerance, rt_tolerance, ccs_tolerance):
@@ -139,6 +129,6 @@ if __name__ == "__main__":
     ccs_tolerance = 0.02
 
     df = create_condensed_distance_matrix(
-        df, ppm_tolerance, rt_tolerance, ccs_tolerance
+        df, ppm_tolerance, rt_tolerance, ccs_tolerance eps_cutoff=eps_cutoff
     )
     print(df)
