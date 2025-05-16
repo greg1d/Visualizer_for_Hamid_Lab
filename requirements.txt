@@ -2,3 +2,8 @@ pyopenms
 tkinter
 pandas
 matplotlib
+numba
+sklearn
+scipy
+numpy
+os
