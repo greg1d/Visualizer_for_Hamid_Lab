@@ -8,6 +8,8 @@ from numba import njit, prange, set_num_threads
 from scipy.sparse import coo_matrix, csr_matrix
 from sklearn.cluster import DBSCAN
 
+from Open_MS_config import extract_spectrum_data, handle_uploaded_file, select_file
+
 # Suppress all warnings (Numba, Sklearn, and others)
 warnings.filterwarnings("ignore")
 
@@ -53,7 +55,7 @@ def calculate_distance_block(
     max_pairs,
 ):
     n = len(mz_values)
-
+    eps_cutoff = 3 ** (0.5)
     # Pre-allocated arrays for efficient parallelization
     row_indices = np.empty(max_pairs, dtype=np.int32)
     col_indices = np.empty(max_pairs, dtype=np.int32)
@@ -87,11 +89,15 @@ def calculate_distance_block(
 
 
 def create_distance_matrix_sparse(
-    df, ppm_tolerance, rt_tolerance, ccs_tolerance, eps_cutoff
+    df,
+    ppm_tolerance,
+    rt_tolerance,
+    ccs_tolerance,
 ):
     mz_values = df["m/z_ion"].values.astype(np.float32)
     rt_values = df["Retention Time (sec)"].values.astype(np.float32)
     ccs_values = df["CCS (Å^2)"].values.astype(np.float32)
+    eps_cutoff = 3 ** (0.5)
 
     # Calculate max_pairs dynamically based on system memory
     max_pairs = calculate_max_pairs()
@@ -117,9 +123,10 @@ def create_distance_matrix_sparse(
     return sparse_matrix
 
 
-def perform_optimized_clustering(df, sparse_matrix, eps_cutoff):
+def perform_optimized_clustering(df, sparse_matrix):
     if not isinstance(sparse_matrix, csr_matrix):
         sparse_matrix = sparse_matrix.tocsr()
+    eps_cutoff = 3 ** (0.5)
 
     dbscan = DBSCAN(eps=eps_cutoff, min_samples=2, metric="precomputed", n_jobs=-1)
     labels = dbscan.fit_predict(sparse_matrix)
@@ -131,30 +138,21 @@ def perform_optimized_clustering(df, sparse_matrix, eps_cutoff):
 
 if __name__ == "__main__":
     # Example Data - Ensure this is a DataFrame
-    df = {
-        "Spectrum Number": [1, 2, 3],
-        "Drift Time (ms)": [12.5, 12.5, 13.2],
-        "Retention Time (sec)": [300, 332, 310],
-        "m/z_ion": [1000, 1000.01, 520.3],
-        "Base Peak Intensity": [1000, 1200, 1100],
-        "CCS (Å^2)": [100, 100, 102],
-    }
+    file_path = select_file()
+    exp = handle_uploaded_file(file_path)
+    df = extract_spectrum_data(exp)
 
     df = pd.DataFrame(df)
-    df_original = df.copy()  # Preserve the original DataFrame with Base Peak Intensity
-
     tfix = -0.067817
     beta = 0.138218
+    df = calculate_CCS_for_mzML_files(df, beta, tfix)
 
-    eps_cutoff = 1.732050808  # Adjusted EPS cutoff value for three dimensions
     ppm_tolerance = 1e-5
     rt_tolerance = 30
     ccs_tolerance = 0.02
 
     sparse_matrix = create_distance_matrix_sparse(
-        df, ppm_tolerance, rt_tolerance, ccs_tolerance, eps_cutoff
+        df, ppm_tolerance, rt_tolerance, ccs_tolerance
     )
-
-    df = perform_optimized_clustering(df, sparse_matrix, eps_cutoff)
-    # Restore Base Peak Intensity from the original DataFrame
+    df = perform_optimized_clustering(df, sparse_matrix)
     print(df)
