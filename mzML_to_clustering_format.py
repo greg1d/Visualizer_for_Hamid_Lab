@@ -1,6 +1,8 @@
 import pandas as pd
 from Open_MS_config import select_file, handle_uploaded_file, extract_spectrum_data
 import numpy as np
+from scipy.sparse import coo_matrix
+from numba import njit, prange
 
 
 def calculate_CCS_for_mzML_files(df, beta, tfix):
@@ -35,54 +37,75 @@ def calculate_CCS_for_mzML_files(df, beta, tfix):
     return df
 
 
-from scipy.sparse import coo_matrix
-
-
-def create_distance_matrix_sparse(
-    df,
+@njit(parallel=True, fastmath=True)
+def create_distance_matrix_sparse_numba(
+    mz_values,
+    rt_values,
+    ccs_values,
     ppm_tolerance,
     rt_tolerance,
     ccs_tolerance,
-    eps_cutoff,  # Only store distances below this cutoff
+    eps_cutoff,
+    max_elements,
 ):
     """
-    Create a sparse distance matrix for large datasets using vectorized calculations.
+    Create a sparse distance matrix using Numba with fixed pre-allocated arrays.
     """
-    mz_values = df["m/z_ion"].values
-    rt_values = df["Retention Time (sec)"].values
-    ccs_values = df["CCS (Å^2)"].values
-    mz_values = np.array(mz_values)
-    rt_values = np.array(rt_values)
-    ccs_values = np.array(ccs_values)
-
     n = len(mz_values)
-    row_indices = []
-    col_indices = []
-    dist_values = []
+    row_indices = np.empty(max_elements, dtype=np.int32)
+    col_indices = np.empty(max_elements, dtype=np.int32)
+    dist_values = np.empty(max_elements, dtype=np.float32)
+    count = 0
 
-    # Use vectorized calculations to compute all pairwise differences
-    for i in range(n):
-        mz_diff = np.abs(mz_values[i] - mz_values)
-        rt_diff = np.abs(rt_values[i] - rt_values)
-        ccs_diff = np.abs(ccs_values[i] - ccs_values)
+    for i in prange(n):
+        for j in range(n):
+            # Calculate distances
+            mz_diff = abs(mz_values[i] - mz_values[j])
+            rt_diff = abs(rt_values[i] - rt_values[j])
+            ccs_diff = abs(ccs_values[i] - ccs_values[j])
 
-        mz_dist = mz_diff / (mz_values[i] * ppm_tolerance)
-        rt_dist = rt_diff / rt_tolerance
-        ccs_dist = ccs_diff / (ccs_values[i] * ccs_tolerance)
+            mz_dist = mz_diff / (mz_values[i] * ppm_tolerance)
+            rt_dist = rt_diff / rt_tolerance
+            ccs_dist = ccs_diff / (ccs_values[i] * ccs_tolerance)
 
-        dist_row = np.sqrt(mz_dist**2 + rt_dist**2 + ccs_dist**2)
+            dist_value = (mz_dist**2 + rt_dist**2 + ccs_dist**2) ** 0.5
 
-        # Apply the cutoff directly using a boolean mask
-        if eps_cutoff is not None:
-            below_cutoff = dist_row <= eps_cutoff
-            non_zero_indices = np.where(below_cutoff)[0]
-            row_indices.extend([i] * len(non_zero_indices))
-            col_indices.extend(non_zero_indices)
-            dist_values.extend(dist_row[non_zero_indices])
-        else:
-            row_indices.extend([i] * n)
-            col_indices.extend(range(n))
-            dist_values.extend(dist_row)
+            if dist_value <= eps_cutoff:
+                if count >= max_elements:
+                    continue  # Prevent overflow, handle this outside Numba
+                row_indices[count] = i
+                col_indices[count] = j
+                dist_values[count] = dist_value
+                count += 1
+
+    return row_indices[:count], col_indices[:count], dist_values[:count]
+
+
+def create_distance_matrix_sparse(
+    df, ppm_tolerance, rt_tolerance, ccs_tolerance, eps_cutoff
+):
+    """
+    Create a sparse distance matrix using pre-allocated arrays with Numba optimization.
+    """
+    mz_values = df["m/z_ion"].values.astype(np.float32)
+    rt_values = df["Retention Time (sec)"].values.astype(np.float32)
+    ccs_values = df["CCS (Å^2)"].values.astype(np.float32)
+    n = len(mz_values)
+
+    # Estimate a conservative upper limit for non-zero values (10x n)
+    max_elements = n * 10
+
+    # Use Numba-accelerated distance calculation with fixed pre-allocated arrays
+    row_indices, col_indices, dist_values = create_distance_matrix_sparse_numba(
+        mz_values,
+        rt_values,
+        ccs_values,
+        ppm_tolerance,
+        rt_tolerance,
+        ccs_tolerance,
+        eps_cutoff,
+        max_elements,
+    )
 
     # Create a sparse matrix using COOrdinate format (efficient for construction)
     sparse_matrix = coo_matrix(
