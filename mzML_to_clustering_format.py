@@ -59,10 +59,10 @@ def create_condensed_distance_matrix(
     Returns:
     csr_matrix: Sparse distance matrix (CSR format).
     """
-    block_size = 5000
-    mz_values = df["m/z_ion"].values
-    rt_values = df["Retention Time (sec)"].values
-    ccs_values = df["CCS (Å^2)"].values
+    
+    mz_values = np.array(mz_values)
+    rt_values = np.array(rt_values)
+    ccs_values = np.array(ccs_values)
 
     n = len(mz_values)
     row_indices = []
