@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 from scipy.sparse import coo_matrix
-from numba import njit, prange
+from numba import njit
 
 
 def calculate_CCS_for_mzML_files(df, beta, tfix):
@@ -36,8 +36,8 @@ def calculate_CCS_for_mzML_files(df, beta, tfix):
     return df
 
 
-@njit(parallel=True, fastmath=True)
-def create_distance_matrix_sparse_numba(
+@njit(fastmath=True)
+def calculate_distance_block(
     mz_values,
     rt_values,
     ccs_values,
@@ -45,57 +45,46 @@ def create_distance_matrix_sparse_numba(
     rt_tolerance,
     ccs_tolerance,
     eps_cutoff,
-    max_elements,
 ):
     """
-    Create a sparse distance matrix using Numba with fixed pre-allocated arrays.
+    Vectorized distance calculation block without dynamic lists.
     """
     n = len(mz_values)
-    row_indices = np.empty(max_elements, dtype=np.int32)
-    col_indices = np.empty(max_elements, dtype=np.int32)
-    dist_values = np.empty(max_elements, dtype=np.float32)
-    count = 0
+    row_indices = []
+    col_indices = []
+    dist_values = []
 
-    for i in prange(n):
-        for j in range(n):
-            # Calculate distances
-            mz_diff = abs(mz_values[i] - mz_values[j])
-            rt_diff = abs(rt_values[i] - rt_values[j])
-            ccs_diff = abs(ccs_values[i] - ccs_values[j])
+    for i in range(n):
+        mz_diff = np.abs(mz_values[i] - mz_values)
+        rt_diff = np.abs(rt_values[i] - rt_values)
+        ccs_diff = np.abs(ccs_values[i] - ccs_values)
 
-            mz_dist = mz_diff / (mz_values[i] * ppm_tolerance)
-            rt_dist = rt_diff / rt_tolerance
-            ccs_dist = ccs_diff / (ccs_values[i] * ccs_tolerance)
+        mz_dist = mz_diff / (mz_values[i] * ppm_tolerance)
+        rt_dist = rt_diff / rt_tolerance
+        ccs_dist = ccs_diff / (ccs_values[i] * ccs_tolerance)
 
-            dist_value = (mz_dist**2 + rt_dist**2 + ccs_dist**2) ** 0.5
+        dist_row = np.sqrt(mz_dist**2 + rt_dist**2 + ccs_dist**2)
+        below_cutoff = dist_row <= eps_cutoff
 
-            if dist_value <= eps_cutoff:
-                if count >= max_elements:
-                    continue  # Prevent overflow, handle this outside Numba
-                row_indices[count] = i
-                col_indices[count] = j
-                dist_values[count] = dist_value
-                count += 1
+        row_indices.extend(np.full(np.sum(below_cutoff), i))
+        col_indices.extend(np.where(below_cutoff)[0])
+        dist_values.extend(dist_row[below_cutoff])
 
-    return row_indices[:count], col_indices[:count], dist_values[:count]
+    return np.array(row_indices), np.array(col_indices), np.array(dist_values)
 
 
 def create_distance_matrix_sparse(
     df, ppm_tolerance, rt_tolerance, ccs_tolerance, eps_cutoff
 ):
     """
-    Create a sparse distance matrix using pre-allocated arrays with Numba optimization.
+    Create a sparse distance matrix using block-wise vectorized calculations.
     """
     mz_values = df["m/z_ion"].values.astype(np.float32)
     rt_values = df["Retention Time (sec)"].values.astype(np.float32)
     ccs_values = df["CCS (Å^2)"].values.astype(np.float32)
-    n = len(mz_values)
 
-    # Estimate a conservative upper limit for non-zero values (10x n)
-    max_elements = n * 10
-
-    # Use Numba-accelerated distance calculation with fixed pre-allocated arrays
-    row_indices, col_indices, dist_values = create_distance_matrix_sparse_numba(
+    # Use Numba-accelerated block distance calculation
+    row_indices, col_indices, dist_values = calculate_distance_block(
         mz_values,
         rt_values,
         ccs_values,
@@ -103,12 +92,13 @@ def create_distance_matrix_sparse(
         rt_tolerance,
         ccs_tolerance,
         eps_cutoff,
-        max_elements,
     )
 
     # Create a sparse matrix using COOrdinate format (efficient for construction)
     sparse_matrix = coo_matrix(
-        (dist_values, (row_indices, col_indices)), shape=(n, n), dtype=np.float32
+        (dist_values, (row_indices, col_indices)),
+        shape=(len(mz_values), len(mz_values)),
+        dtype=np.float32,
     ).tocsr()
 
     print(
@@ -119,14 +109,13 @@ def create_distance_matrix_sparse(
 
 if __name__ == "__main__":
     # Example Data - Ensure this is a DataFrame
-
     df = {
         "Spectrum Number": [1, 2, 3],
         "Drift Time (ms)": [12.5, 12.5, 13.2],
         "Retention Time (sec)": [300, 332, 310],
         "m/z_ion": [1000, 1000.01, 520.3],
         "Base Peak Intensity": [1000, 1200, 1100],
-        "CCS (Å^2)": [100, 102, 102],
+        "CCS (Å^2)": [100, 100, 102],
     }
 
     df = pd.DataFrame(df)
@@ -138,7 +127,7 @@ if __name__ == "__main__":
     rt_tolerance = 30
     ccs_tolerance = 0.02
 
-    df = create_distance_matrix_sparse(
+    sparse_matrix = create_distance_matrix_sparse(
         df, ppm_tolerance, rt_tolerance, ccs_tolerance, eps_cutoff
     )
-    print(df)
+    print(sparse_matrix)
