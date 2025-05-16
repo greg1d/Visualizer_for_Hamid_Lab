@@ -38,14 +38,12 @@ def calculate_CCS_for_mzML_files(df, beta, tfix):
 from scipy.sparse import coo_matrix
 
 
-import numpy as np
-from scipy.sparse import coo_matrix, csr_matrix
-
 def create_distance_matrix_sparse(
-    ppm_tolerance=1e-5,
-    rt_tolerance=0.5,
-    ccs_tolerance=0.02,
-    eps_cutoff=None  # Only store distances below this cutoff
+    df,
+    ppm_tolerance,
+    rt_tolerance,
+    ccs_tolerance,
+    eps_cutoff,  # Only store distances below this cutoff
 ):
     """
     Create a sparse distance matrix for large datasets using vectorized calculations.
@@ -72,7 +70,7 @@ def create_distance_matrix_sparse(
         rt_dist = rt_diff / rt_tolerance
         ccs_dist = ccs_diff / (ccs_values[i] * ccs_tolerance)
 
-        dist_row = np.sqrt(mz_dist ** 2 + rt_dist ** 2 + ccs_dist ** 2)
+        dist_row = np.sqrt(mz_dist**2 + rt_dist**2 + ccs_dist**2)
 
         # Apply the cutoff directly using a boolean mask
         if eps_cutoff is not None:
@@ -88,28 +86,13 @@ def create_distance_matrix_sparse(
 
     # Create a sparse matrix using COOrdinate format (efficient for construction)
     sparse_matrix = coo_matrix(
-        (dist_values, (row_indices, col_indices)),
-        shape=(n, n),
-        dtype=np.float32
+        (dist_values, (row_indices, col_indices)), shape=(n, n), dtype=np.float32
     ).tocsr()
 
-    print(f"Non-zero elements of the sparse distance matrix: {sparse_matrix.count_nonzero()}")
-    return sparse_matrix
-
-
-
-def perform_clustering(df, ppm_tolerance, rt_tolerance, ccs_tolerance):
-    eps_cutoff = 1.732  # Adjusted EPS cutoff value for three dimensions
-    mz_values = df["m/z_ion"].values
-    rt_values = df["Retention Time (sec)"].values
-    ccs_values = df["CCS (Å^2)"].values
-    dist_matrix_sparse = create_condensed_distance_matrix(
-        ppm_tolerance=ppm_tolerance,
-        rt_tolerance=rt_tolerance,
-        ccs_tolerance=ccs_tolerance,
-        eps_cutoff=eps_cutoff,
+    print(
+        f"Non-zero elements of the sparse distance matrix: {sparse_matrix.count_nonzero()}"
     )
-    return dist_matrix_sparse
+    return sparse_matrix
 
 
 if __name__ == "__main__":
@@ -128,7 +111,7 @@ if __name__ == "__main__":
     rt_tolerance = 0.5
     ccs_tolerance = 0.02
 
-    df = create_condensed_distance_matrix(
-        df, ppm_tolerance, rt_tolerance, ccs_tolerance eps_cutoff=eps_cutoff
+    df = create_distance_matrix_sparse(
+        df, ppm_tolerance, rt_tolerance, ccs_tolerance, eps_cutoff
     )
     print(df)
