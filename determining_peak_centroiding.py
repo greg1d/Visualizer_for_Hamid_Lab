@@ -4,6 +4,8 @@ from determining_peak_profile import (
 )
 from Open_MS_config import select_file
 import pandas as pd
+from scipy.optimize import curve_fit
+import numpy as np
 
 
 def calculate_cluster_relative_intensity(df):
@@ -59,15 +61,9 @@ def extract_cluster_for_debugging(df, cluster_id=0):
     return cluster_df
 
 
-import numpy as np
-
-
 def gaussian(x, a, mu, sigma):
     """Gaussian function."""
     return a * np.exp(-((x - mu) ** 2) / (2 * sigma**2))
-
-
-from scipy.optimize import curve_fit
 
 
 def determine_mz_center(cluster_df):
