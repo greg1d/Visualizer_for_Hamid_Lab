@@ -3,9 +3,7 @@ from determining_peak_profile import (
     load_or_process_data,
 )
 from Open_MS_config import select_file
-
-import matplotlib.pyplot as plt
-from scipy.optimize import curve_fit
+import pandas as pd
 
 
 def calculate_cluster_relative_intensity(df):
@@ -69,35 +67,38 @@ def gaussian(x, a, mu, sigma):
     return a * np.exp(-((x - mu) ** 2) / (2 * sigma**2))
 
 
-def determine_mass_center(cluster_df):
-    """
-    Fit a Gaussian to the 99th percentile intensities at each m/z value,
-    weighted by the number of values contributing to each m/z bin.
-    Returns the peak center (mu) and peak intensity (amplitude a).
-    """
+from scipy.optimize import curve_fit
+
+
+def determine_mz_center(cluster_df):
     if cluster_df.empty:
-        print("Empty cluster.")
         return None, None
 
-    # Bin by rounding m/z
     cluster_df["rounded_mz"] = cluster_df["m/z_ion"].round(4)
-
-    # Group by binned m/z, calculate 99th percentile and count of values
     grouped = cluster_df.groupby("rounded_mz")["Cluster Relative Intensity"]
-    stats = grouped.quantile(0.99).reset_index()
-    stats["count"] = grouped.count().values  # Weight = number of points in the bin
+
+    try:
+        stats = grouped.quantile(0.99).reset_index()
+        stats["count"] = grouped.count().values
+    except Exception:
+        return None, None
 
     x_data = stats["rounded_mz"].values
     y_data = stats["Cluster Relative Intensity"].values
     weights = stats["count"].values
 
-    # Initial parameter guesses
+    if len(x_data) < 3:
+        weighted_mean = np.average(
+            cluster_df["m/z_ion"], weights=cluster_df["Cluster Relative Intensity"]
+        )
+        peak_intensity = cluster_df["Cluster Relative Intensity"].max()
+        return weighted_mean, peak_intensity
+
     a_guess = np.max(y_data)
     mu_guess = x_data[np.argmax(y_data)]
     sigma_guess = (x_data.max() - x_data.min()) / 6
 
     try:
-        # Weighted Gaussian curve fit
         popt, _ = curve_fit(
             gaussian,
             x_data,
@@ -106,68 +107,45 @@ def determine_mass_center(cluster_df):
             sigma=1 / weights,
             absolute_sigma=True,
         )
-        a, mu, sigma = popt
-
-        # Plotting
-        x_fit = np.linspace(x_data.min(), x_data.max(), 500)
-        y_fit = gaussian(x_fit, *popt)
-
-        plt.figure(figsize=(8, 5))
-        plt.scatter(
-            x_data, y_data, s=weights * 2, alpha=0.7, label="99th percentile (weighted)"
-        )
-        plt.plot(x_fit, y_fit, color="red", label="Fitted Gaussian")
-        plt.axvline(
-            mu, color="green", linestyle="--", label=f"Peak center (μ={mu:.4f})"
-        )
-        plt.xlabel("m/z")
-        plt.ylabel("Intensity")
-        plt.title("Weighted Gaussian Fit of Cluster")
-        plt.legend()
-        plt.tight_layout()
-        plt.show()
-
-        print("Fitted Gaussian Parameters:")
-        print(f"  Amplitude (a): {a:.4f}")
-        print(f"  Center (μ): {mu:.4f}")
-        print(f"  Std Dev (σ): {sigma:.4f}")
-
+        a, mu = popt[0], popt[1]
         return mu, a
-
     except RuntimeError:
-        print("Gaussian fitting failed.")
-        return None, None
+        weighted_mean = np.average(
+            cluster_df["m/z_ion"], weights=cluster_df["Cluster Relative Intensity"]
+        )
+        peak_intensity = cluster_df["Cluster Relative Intensity"].max()
+        return weighted_mean, peak_intensity
 
 
 def determine_dt_center(cluster_df):
-    """
-    Fit a Gaussian to the 99th percentile intensities at each m/z value,
-    weighted by the number of values contributing to each m/z bin.
-    Returns the peak center (mu) and peak intensity (amplitude a).
-    """
     if cluster_df.empty:
-        print("Empty cluster.")
         return None, None
 
-    # Bin by rounding m/z
     cluster_df["rounded_dt"] = cluster_df["DT"].round(4)
-
-    # Group by binned m/z, calculate 99th percentile and count of values
     grouped = cluster_df.groupby("rounded_dt")["Cluster Relative Intensity"]
-    stats = grouped.quantile(0.99).reset_index()
-    stats["count"] = grouped.count().values  # Weight = number of points in the bin
+
+    try:
+        stats = grouped.quantile(0.99).reset_index()
+        stats["count"] = grouped.count().values
+    except Exception:
+        return None, None
 
     x_data = stats["rounded_dt"].values
     y_data = stats["Cluster Relative Intensity"].values
     weights = stats["count"].values
 
-    # Initial parameter guesses
+    if len(x_data) < 3:
+        weighted_mean = np.average(
+            cluster_df["DT"], weights=cluster_df["Cluster Relative Intensity"]
+        )
+        peak_intensity = cluster_df["Cluster Relative Intensity"].max()
+        return weighted_mean, peak_intensity
+
     a_guess = np.max(y_data)
     mu_guess = x_data[np.argmax(y_data)]
     sigma_guess = (x_data.max() - x_data.min()) / 6
 
     try:
-        # Weighted Gaussian curve fit
         popt, _ = curve_fit(
             gaussian,
             x_data,
@@ -176,68 +154,46 @@ def determine_dt_center(cluster_df):
             sigma=1 / weights,
             absolute_sigma=True,
         )
-        a, mu, sigma = popt
-
-        # Plotting
-        x_fit = np.linspace(x_data.min(), x_data.max(), 500)
-        y_fit = gaussian(x_fit, *popt)
-
-        plt.figure(figsize=(8, 5))
-        plt.scatter(
-            x_data, y_data, s=weights * 2, alpha=0.7, label="99th percentile (weighted)"
-        )
-        plt.plot(x_fit, y_fit, color="red", label="Fitted Gaussian")
-        plt.axvline(
-            mu, color="green", linestyle="--", label=f"Peak center (μ={mu:.4f})"
-        )
-        plt.xlabel("DT")
-        plt.ylabel("Intensity")
-        plt.title("Weighted Gaussian with Weighted 99th percentile Fit of Cluster")
-        plt.legend()
-        plt.tight_layout()
-        plt.show()
-
-        print("Fitted Gaussian Parameters:")
-        print(f"  Amplitude (a): {a:.4f}")
-        print(f"  Center (μ): {mu:.4f}")
-        print(f"  Std Dev (σ): {sigma:.4f}")
-
+        a, mu = popt[0], popt[1]
         return mu, a
-
     except RuntimeError:
-        print("Gaussian fitting failed.")
-        return None, None
+        weighted_mean = np.average(
+            cluster_df["DT"], weights=cluster_df["Cluster Relative Intensity"]
+        )
+        peak_intensity = cluster_df["Cluster Relative Intensity"].max()
+        return weighted_mean, peak_intensity
 
 
 def determine_rt_center(cluster_df):
-    """
-    Fit a Gaussian to the 99th percentile intensities at each m/z value,
-    weighted by the number of values contributing to each m/z bin.
-    Returns the peak center (mu) and peak intensity (amplitude a).
-    """
     if cluster_df.empty:
-        print("Empty cluster.")
         return None, None
 
-    # Bin by rounding m/z
     cluster_df["rounded_rt"] = cluster_df["Retention Time (sec)"].round(4)
-
-    # Group by binned m/z, calculate 99th percentile and count of values
     grouped = cluster_df.groupby("rounded_rt")["Cluster Relative Intensity"]
-    stats = grouped.quantile(0.99).reset_index()
-    stats["count"] = grouped.count().values  # Weight = number of points in the bin
+
+    try:
+        stats = grouped.quantile(0.99).reset_index()
+        stats["count"] = grouped.count().values
+    except Exception:
+        return None, None
 
     x_data = stats["rounded_rt"].values
     y_data = stats["Cluster Relative Intensity"].values
     weights = stats["count"].values
 
-    # Initial parameter guesses
+    if len(x_data) < 3:
+        weighted_mean = np.average(
+            cluster_df["Retention Time (sec)"],
+            weights=cluster_df["Cluster Relative Intensity"],
+        )
+        peak_intensity = cluster_df["Cluster Relative Intensity"].max()
+        return weighted_mean, peak_intensity
+
     a_guess = np.max(y_data)
     mu_guess = x_data[np.argmax(y_data)]
     sigma_guess = (x_data.max() - x_data.min()) / 6
 
     try:
-        # Weighted Gaussian curve fit
         popt, _ = curve_fit(
             gaussian,
             x_data,
@@ -246,37 +202,46 @@ def determine_rt_center(cluster_df):
             sigma=1 / weights,
             absolute_sigma=True,
         )
-        a, mu, sigma = popt
-
-        # Plotting
-        x_fit = np.linspace(x_data.min(), x_data.max(), 500)
-        y_fit = gaussian(x_fit, *popt)
-
-        plt.figure(figsize=(8, 5))
-        plt.scatter(
-            x_data, y_data, s=weights * 2, alpha=0.7, label="99th percentile (weighted)"
-        )
-        plt.plot(x_fit, y_fit, color="red", label="Fitted Gaussian")
-        plt.axvline(
-            mu, color="green", linestyle="--", label=f"Peak center (μ={mu:.4f})"
-        )
-        plt.xlabel("RT (sec)")
-        plt.ylabel("Intensity")
-        plt.title("Weighted Gaussian with Weighted 99th percentile Fit of Cluster")
-        plt.legend()
-        plt.tight_layout()
-        plt.show()
-
-        print("Fitted Gaussian Parameters:")
-        print(f"  Amplitude (a): {a:.4f}")
-        print(f"  Center (μ): {mu:.4f}")
-        print(f"  Std Dev (σ): {sigma:.4f}")
-
+        a, mu = popt[0], popt[1]
         return mu, a
-
     except RuntimeError:
-        print("Gaussian fitting failed.")
-        return None, None
+        weighted_mean = np.average(
+            cluster_df["Retention Time (sec)"],
+            weights=cluster_df["Cluster Relative Intensity"],
+        )
+        peak_intensity = cluster_df["Cluster Relative Intensity"].max()
+        return weighted_mean, peak_intensity
+
+
+def generate_cluster_centroid_report(df):
+    """
+    Generate a simplified report with center and amplitude for each cluster.
+    Returns a DataFrame where each row corresponds to a single cluster.
+    """
+    report_rows = []
+
+    cluster_ids = df["Cluster"].unique()
+    for cluster_id in cluster_ids:
+        cluster_df = df[df["Cluster"] == cluster_id].copy()
+        cluster_df = calculate_cluster_relative_intensity(cluster_df)
+
+        mz_center, amp_mz = determine_mz_center(cluster_df)
+        dt_center, amp_dt = determine_dt_center(cluster_df)
+        rt_center, amp_rt = determine_rt_center(cluster_df)
+
+        report_rows.append(
+            {
+                "Cluster": cluster_id,
+                "m/z_ion_center": mz_center,
+                "DT_center": dt_center,
+                "Retention Time (sec)_center": rt_center,
+                "Amplitude_mz": amp_mz,
+                "Amplitude_dt": amp_dt,
+                "Amplitude_rt": amp_rt,
+            }
+        )
+
+    return pd.DataFrame(report_rows)
 
 
 if __name__ == "__main__":
@@ -296,9 +261,12 @@ if __name__ == "__main__":
         file_path, tfix, beta, ppm_tolerance, rt_tolerance, ccs_tolerance
     )
 
-    # Exclude noise and extract a specific cluster
+    # Exclude noise if specified
     df = exclude_noise_points(df, exclude_noise=exclude_noise_flag)
-    debug_cluster_id = 12051  # Specify the cluster ID to debug
-    cluster_df = extract_cluster_for_debugging(df, cluster_id=debug_cluster_id)
-    cluster_df = calculate_cluster_relative_intensity(cluster_df)
-    determine_rt_center(cluster_df)
+
+    # Generate simplified centroid report
+    report_df = generate_cluster_centroid_report(df)
+
+    # Output the report
+    print("\nCluster Centroid Report:")
+    print(report_df)
