@@ -2,6 +2,7 @@ from determining_peak_profile import (
     exclude_noise_points,
     load_or_process_data,
 )
+
 from Open_MS_config import select_file
 import pandas as pd
 from scipy.optimize import curve_fit
@@ -209,35 +210,43 @@ def determine_rt_center(cluster_df):
         return weighted_mean, peak_intensity
 
 
+from concurrent.futures import ProcessPoolExecutor
+
+
+def process_single_cluster(cluster_tuple):
+    cluster_id, cluster_df = cluster_tuple
+    cluster_df = calculate_cluster_relative_intensity(cluster_df)
+
+    mz_center, amp_mz = determine_mz_center(cluster_df)
+    dt_center, amp_dt = determine_dt_center(cluster_df)
+    rt_center, amp_rt = determine_rt_center(cluster_df)
+
+    return {
+        "Cluster": cluster_id,
+        "m/z_ion_center": mz_center,
+        "DT_center": dt_center,
+        "Retention Time (sec)_center": rt_center,
+        "Peak Intensity": cluster_df["Total Base Peak Intensity"].max(),
+        "Amplitude_mz": amp_mz,
+        "Amplitude_dt": amp_dt,
+        "Amplitude_rt": amp_rt,
+    }
+
+
 def generate_cluster_centroid_report(df):
     """
-    Generate a simplified report with center and amplitude for each cluster.
-    Returns a DataFrame where each row corresponds to a single cluster.
+    Parallelized generation of a simplified report with center and amplitude for each cluster.
     """
-    report_rows = []
-
     cluster_ids = df["Cluster"].unique()
-    for cluster_id in cluster_ids:
-        cluster_df = df[df["Cluster"] == cluster_id].copy()
-        cluster_df = calculate_cluster_relative_intensity(cluster_df)
+    cluster_data = [
+        (cluster_id, df[df["Cluster"] == cluster_id].copy())
+        for cluster_id in cluster_ids
+    ]
 
-        mz_center, amp_mz = determine_mz_center(cluster_df)
-        dt_center, amp_dt = determine_dt_center(cluster_df)
-        rt_center, amp_rt = determine_rt_center(cluster_df)
+    with ProcessPoolExecutor() as executor:
+        results = list(executor.map(process_single_cluster, cluster_data))
 
-        report_rows.append(
-            {
-                "Cluster": cluster_id,
-                "m/z_ion_center": mz_center,
-                "DT_center": dt_center,
-                "Retention Time (sec)_center": rt_center,
-                "Amplitude_mz": amp_mz,
-                "Amplitude_dt": amp_dt,
-                "Amplitude_rt": amp_rt,
-            }
-        )
-
-    return pd.DataFrame(report_rows)
+    return pd.DataFrame(results)
 
 
 if __name__ == "__main__":
@@ -259,7 +268,7 @@ if __name__ == "__main__":
 
     # Exclude noise if specified
     df = exclude_noise_points(df, exclude_noise=exclude_noise_flag)
-
+    print(df.head())
     # Generate simplified centroid report
     report_df = generate_cluster_centroid_report(df)
 
