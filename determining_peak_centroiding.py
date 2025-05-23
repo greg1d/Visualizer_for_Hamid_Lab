@@ -296,20 +296,8 @@ if __name__ == "__main__":
     # Optionally exclude noise points
     df = exclude_noise_points(df, exclude_noise=exclude_noise_flag)
 
-    mz_center = 311.298
-    mz_tolerance = 0.2
-    dt_center = 34.54
-    dt_tolerance = 1
-
-    cluster_df = generate_cluster_centroid_report(df)
-    debug_df = extract_cluster_by_number(cluster_df, cluster_id=31848)
+    # Extract cluster by specified criteria
+    cluster_df = extract_cluster_by_number(df, cluster_id=31848)
+    debug_df = determine_mz_center(cluster_df)
+    print("\nExtracted Cluster by Criteria:")
     print(debug_df)
-    matched_clusters = extract_cluster_by_mz_dt(
-        df=cluster_df,
-        mz_center=mz_center,
-        mz_tolerance=mz_tolerance,
-        dt_center=dt_center,
-        dt_tolerance=dt_tolerance,
-        mz_col="m/z_ion_center",
-        dt_col="DT_center",
-    )

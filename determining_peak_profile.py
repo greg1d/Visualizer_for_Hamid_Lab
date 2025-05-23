@@ -174,7 +174,7 @@ if __name__ == "__main__":
     df = exclude_noise_points(df, exclude_noise=exclude_noise_flag)
 
     # Extract cluster by specified criteria
-    cluster_df = extract_cluster_by_number(df, cluster_id=30211)
+    cluster_df = extract_cluster_by_number(df, cluster_id=31848)
 
     print("\nExtracted Cluster by Criteria:")
     print(cluster_df)
