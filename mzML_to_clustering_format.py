@@ -167,5 +167,5 @@ if __name__ == "__main__":
         df, ppm_tolerance, rt_tolerance, ccs_tolerance
     )
     df = perform_optimized_clustering(df, sparse_matrix)
-    df = extract_cluster_by_number(df, cluster_id=30211)
+    df = extract_cluster_by_number(df, cluster_id=31848)
     print(df)
