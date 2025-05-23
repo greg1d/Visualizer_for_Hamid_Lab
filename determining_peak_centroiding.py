@@ -1,12 +1,24 @@
+import warnings
+
+# Suppress specific pyOpenMS OPENMS_DATA_PATH warning
+warnings.filterwarnings(
+    "ignore",
+    message=".*OPENMS_DATA_PATH environment variable already exists.*",
+    category=UserWarning,
+)
+
+from concurrent.futures import ProcessPoolExecutor
+
+import numpy as np
+import pandas as pd
+from pyopenms import *  # Must come after warning suppression
+from scipy.optimize import curve_fit
+
 from determining_peak_profile import (
     exclude_noise_points,
     load_or_process_data,
 )
-
 from Open_MS_config import select_file
-import pandas as pd
-from scipy.optimize import curve_fit
-import numpy as np
 
 
 def calculate_cluster_relative_intensity(df):
@@ -208,9 +220,6 @@ def determine_rt_center(cluster_df):
         )
         peak_intensity = cluster_df["Cluster Relative Intensity"].max()
         return weighted_mean, peak_intensity
-
-
-from concurrent.futures import ProcessPoolExecutor
 
 
 def process_single_cluster(cluster_tuple):
