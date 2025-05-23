@@ -174,6 +174,18 @@ def extract_cluster_by_criteria(
     return cluster_df
 
 
+def extract_cluster_by_number(df, cluster_id):
+    """
+    Extract and return the DataFrame for a specific cluster number.
+    """
+    cluster_df = df[df["Cluster"] == cluster_id].copy()
+    if cluster_df.empty:
+        print(f"[INFO] Cluster {cluster_id} not found.")
+    else:
+        print(f"[INFO] Extracted Cluster {cluster_id} with {len(cluster_df)} rows.")
+    return cluster_df
+
+
 if __name__ == "__main__":
     # User-Editable Parameters
     tfix = -0.067817
@@ -195,15 +207,7 @@ if __name__ == "__main__":
     df = exclude_noise_points(df, exclude_noise=exclude_noise_flag)
 
     # Extract cluster by specified criteria
-    cluster_df = extract_cluster_by_criteria(
-        df,
-        mz_target=704.5227,
-        dt_target=33.7,
-        rt_target=300,
-        mz_tolerance=0.1,
-        dt_tolerance=1,
-        rt_tolerance=50,
-    )
+    cluster_df = extract_cluster_by_number(df, cluster_id=27142)
 
     print("\nExtracted Cluster by Criteria:")
     print(cluster_df)

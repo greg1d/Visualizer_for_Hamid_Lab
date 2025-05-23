@@ -14,9 +14,10 @@ import pandas as pd  # noqa: E402
 from pyopenms import *  # Must come after warning suppression  # noqa: E402, F403
 from scipy.optimize import curve_fit  # noqa: E402
 
-from determining_peak_profile import (  # noqa: E402
+from implementing_SQL import (  # noqa: E402
     exclude_noise_points,
     load_or_process_data,
+    pick_cluster_by_base_mz,
 )
 from Open_MS_config import select_file  # noqa: E402
 
@@ -50,28 +51,6 @@ def calculate_cluster_relative_intensity(df):
     ) * total_base_peak_intensity
 
     return df
-
-
-def extract_cluster_for_debugging(df, cluster_id=0):
-    """
-    Extract a single cluster by ID for debugging.
-
-    Parameters:
-    df (pd.DataFrame): The full DataFrame with cluster annotations.
-    cluster_id (int): The Cluster ID to extract.
-
-    Returns:
-    pd.DataFrame: Filtered DataFrame containing only the specified cluster.
-    """
-    if "Cluster" not in df.columns:
-        raise ValueError("DataFrame must contain 'Cluster' column.")
-
-    cluster_df = df[df["Cluster"] == cluster_id].copy()
-
-    print(f"\nExtracted Cluster {cluster_id} for Debugging ({len(cluster_df)} rows):")
-    print(cluster_df)
-
-    return cluster_df
 
 
 def gaussian(x, a, mu, sigma):
@@ -270,28 +249,25 @@ def generate_cluster_centroid_report(df):
 
 
 if __name__ == "__main__":
-    # User-Editable Parameters
     tfix = -0.067817
     beta = 0.138218
-    exclude_noise_flag = True
+    exclude_noise_flag = True  # Set this to True to exclude noise points (Cluster -1)
 
-    # Select file and set tolerances
+    # Example Data - Ensure this is a DataFrame
     file_path = select_file()
     ppm_tolerance = 1e-5
     rt_tolerance = 30
-    ccs_tolerance = 0.02
+    ccs_tolerance = 0.01
 
-    # Load or process data
+    # Load or process the data (caching with SQLite in .temp)
     df = load_or_process_data(
         file_path, tfix, beta, ppm_tolerance, rt_tolerance, ccs_tolerance
     )
 
-    # Exclude noise if specified
+    # Optionally exclude noise points
     df = exclude_noise_points(df, exclude_noise=exclude_noise_flag)
-    print(df.head())
-    # Generate simplified centroid report
-    report_df = generate_cluster_centroid_report(df)
-
-    # Output the report
-    print("\nCluster Centroid Report:")
-    report_df.to_csv("cluster_centroid_report_including_MS.csv", index=False)
+    target_mz = 551.5076288832349
+    tolerance = 1e-4
+    df = pick_cluster_by_base_mz(df, target_mz=target_mz, tolerance=tolerance)
+    print("\nCluster for Debugging:")
+    print(df)

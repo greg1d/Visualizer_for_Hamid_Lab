@@ -136,6 +136,18 @@ def perform_optimized_clustering(df, sparse_matrix):
     return df
 
 
+def extract_cluster_by_number(df, cluster_id):
+    """
+    Extract and return the DataFrame for a specific cluster number.
+    """
+    cluster_df = df[df["Cluster"] == cluster_id].copy()
+    if cluster_df.empty:
+        print(f"[INFO] Cluster {cluster_id} not found.")
+    else:
+        print(f"[INFO] Extracted Cluster {cluster_id} with {len(cluster_df)} rows.")
+    return cluster_df
+
+
 if __name__ == "__main__":
     # Example Data - Ensure this is a DataFrame
     file_path = select_file()
@@ -155,4 +167,5 @@ if __name__ == "__main__":
         df, ppm_tolerance, rt_tolerance, ccs_tolerance
     )
     df = perform_optimized_clustering(df, sparse_matrix)
+    df = extract_cluster_by_number(df, cluster_id=27142)
     print(df)
