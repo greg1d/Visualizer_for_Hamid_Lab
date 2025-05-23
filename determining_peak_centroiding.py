@@ -9,6 +9,7 @@ warnings.filterwarnings(
 
 from concurrent.futures import ProcessPoolExecutor  # noqa: E402
 
+import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 from pyopenms import *  # Must come after warning suppression  # noqa: E402, F403
@@ -59,34 +60,41 @@ def gaussian(x, a, mu, sigma):
 
 
 def determine_mz_center(cluster_df):
+    """
+    Fit a Gaussian to the 99th percentile intensities at each m/z value,
+    weighted by the number of values contributing to each m/z bin.
+    Returns the peak apex (mu).
+    """
     if cluster_df.empty:
-        return None, None
+        print("Empty cluster.")
+        return None
 
-    cluster_df["rounded_mz"] = cluster_df["m/z_ion"].round(4)
-    grouped = cluster_df.groupby("rounded_mz")["Cluster Relative Intensity"]
+    # Bin by rounding m/z
+    cluster_df["rounded_mz"] = cluster_df["m/z_ion"]
 
-    try:
-        stats = grouped.quantile(0.99).reset_index()
-        stats["count"] = grouped.count().values
-    except Exception:
-        return None, None
+    # Group by binned m/z, calculate 99th percentile and count of values
+    grouped = cluster_df.groupby("rounded_mz")["Base Peak Intensity"]
+    stats = grouped.quantile(0.99).reset_index()
+    stats["count"] = grouped.count().values  # Weight = number of points in the bin
 
     x_data = stats["rounded_mz"].values
-    y_data = stats["Cluster Relative Intensity"].values
+    y_data = stats["Base Peak Intensity"].values
     weights = stats["count"].values
 
-    if len(x_data) < 3:
-        weighted_mean = np.average(
-            cluster_df["m/z_ion"], weights=cluster_df["Cluster Relative Intensity"]
-        )
-        peak_intensity = cluster_df["Cluster Relative Intensity"].max()
-        return weighted_mean, peak_intensity
+    # Debug output
+    print(f"[DEBUG] x_data (rounded m/z): {x_data}")
 
+    if len(x_data) < 3:
+        print("Not enough data points to fit a Gaussian.")
+        return None
+
+    # Initial parameter guesses
     a_guess = np.max(y_data)
     mu_guess = x_data[np.argmax(y_data)]
     sigma_guess = (x_data.max() - x_data.min()) / 6
 
     try:
+        # Weighted curve fitting
         popt, _ = curve_fit(
             gaussian,
             x_data,
@@ -95,14 +103,37 @@ def determine_mz_center(cluster_df):
             sigma=1 / weights,
             absolute_sigma=True,
         )
-        a, mu = popt[0], popt[1]
-        return mu, a
-    except RuntimeError:
-        weighted_mean = np.average(
-            cluster_df["m/z_ion"], weights=cluster_df["Cluster Relative Intensity"]
+        a, mu, sigma = popt
+
+        # Plot
+        x_fit = np.linspace(x_data.min(), x_data.max(), 500)
+        y_fit = gaussian(x_fit, *popt)
+
+        plt.figure(figsize=(8, 5))
+        plt.scatter(
+            x_data, y_data, s=weights * 2, label="99th percentile (weighted)", alpha=0.7
         )
-        peak_intensity = cluster_df["Cluster Relative Intensity"].max()
-        return weighted_mean, peak_intensity
+        plt.plot(x_fit, y_fit, color="red", label="Fitted Gaussian")
+        plt.axvline(
+            mu, color="green", linestyle="--", label=f"Peak center (μ={mu:.4f})"
+        )
+        plt.xlabel("m/z")
+        plt.ylabel("Intensity")
+        plt.title("Gaussian Fit with Weighted 99th Percentile per m/z Bin")
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+
+        print("Fitted Gaussian Parameters (Weighted):")
+        print(f"  Amplitude (a): {a:.4f}")
+        print(f"  Center (μ): {mu:.4f} <-- dy/dx = 0 here")
+        print(f"  Std Dev (σ): {sigma:.4f}")
+
+        return mu
+
+    except RuntimeError:
+        print("Gaussian fitting failed.")
+        return None
 
 
 def determine_dt_center(cluster_df):
@@ -218,9 +249,13 @@ def process_single_cluster(cluster_tuple):
     mz_center, amp_mz = determine_mz_center(cluster_df)
     dt_center, amp_dt = determine_dt_center(cluster_df)
     rt_center, amp_rt, sigma_rt = determine_rt_center(cluster_df)
-
+    if "MS Level" in cluster_df.columns and not cluster_df["MS Level"].isnull().all():
+        ms_level = cluster_df["MS Level"].mode().iloc[0]  # most common level
+    else:
+        ms_level = None
     return {
         "Cluster": cluster_id,
+        "MS Level": ms_level,
         "m/z_ion_center": mz_center,
         "DT_center": dt_center,
         "Retention Time (sec)_center": rt_center,
@@ -266,8 +301,14 @@ if __name__ == "__main__":
 
     # Optionally exclude noise points
     df = exclude_noise_points(df, exclude_noise=exclude_noise_flag)
-    target_mz = 551.5076288832349
-    tolerance = 1e-4
-    df = pick_cluster_by_base_mz(df, target_mz=target_mz, tolerance=tolerance)
-    print("\nCluster for Debugging:")
+    target_mz = 551.50
+    tolerance = 1e-3
+    df = pick_cluster_by_base_mz(
+        df,
+        target_mz=551.50,
+        mz_tolerance=1e-3,
+        target_dt=33.0,  # optional: set to None to skip DT filtering
+        dt_tolerance=0.5,
+    )
+    df = determine_mz_center(df)
     print(df)
