@@ -190,20 +190,30 @@ def exclude_noise_points(df, exclude_noise=True):
     return df
 
 
-def pick_a_cluster_for_debugging(df):
+def pick_cluster_by_base_mz(df, target_mz=551.5076288832349, tolerance=1e-4):
     """
-    Extract and display the 50th largest cluster for debugging.
-    """
-    if not df.empty:
-        cluster_sizes = df["Cluster"].value_counts().sort_values(ascending=False)
+    Find and return all clusters that contain MS Level 2 spectra with a base peak m/z near the target.
 
-        if len(cluster_sizes) >= 500:
-            target_cluster = cluster_sizes.index[
-                499
-            ]  # 50th largest cluster (0-indexed)
-            cluster_df = df[df["Cluster"] == target_cluster]
-            return cluster_df
-    return pd.DataFrame()
+    Parameters:
+    - df (pd.DataFrame): The full DataFrame with clustering results.
+    - target_mz (float): The m/z value to look for.
+    - tolerance (float): Acceptable deviation from the target m/z.
+
+    Returns:
+    - pd.DataFrame: All rows from matching clusters.
+    """
+    # Filter for MS Level 2 spectra with m/z close to target
+    match = df[
+        (df["MS Level"] == 2) & (df["m/z_ion"].sub(target_mz).abs() <= tolerance)
+    ]
+
+    if not match.empty:
+        cluster_ids = match["Cluster"].unique()
+        print(f"[INFO] Found {len(cluster_ids)} matching cluster(s): {cluster_ids}")
+        return df[df["Cluster"].isin(cluster_ids)].copy()
+    else:
+        print("[INFO] No matching m/z found in any MS Level 2 cluster.")
+        return pd.DataFrame()
 
 
 if __name__ == "__main__":
@@ -225,8 +235,8 @@ if __name__ == "__main__":
 
     # Optionally exclude noise points
     df = exclude_noise_points(df, exclude_noise=exclude_noise_flag)
-
-    # Debugging: Extract the 50th largest cluster for analysis
-    df = pick_a_cluster_for_debugging(df)
+    target_mz = 551.5076288832349
+    tolerance = 1e-4
+    df = pick_cluster_by_base_mz(df, target_mz=target_mz, tolerance=tolerance)
     print("\nCluster for Debugging:")
     print(df)

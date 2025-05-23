@@ -1,7 +1,7 @@
-import matplotlib.pyplot as plt
-import pandas as pd
 import tkinter as tk
 from tkinter import filedialog
+
+import pandas as pd
 from pyopenms import MSExperiment, MzMLFile
 
 
@@ -31,16 +31,20 @@ def handle_uploaded_file(file_path):
 
 def extract_spectrum_data(exp):
     """Extracts DT, RT, base peak m/z, and base peak intensity for all spectra.
-    Prints only those with m/z ∈ [861.45, 861.75] and DT ∈ [37.5, 42.5]. Also reports max RT.
+    Prints MS level 1 and 2 spectra and specifically debugs the one with base peak m/z ≈ 551.5076.
     """
     drift_times = []
     retention_times = []
     mz_values = []
     base_peak_intensities = []
+    ms_levels = []
 
     max_rt = float("-inf")
 
+    print("\n[INFO] MS level 1 and 2 spectra:")
+
     for i, spectrum in enumerate(exp.getSpectra()):
+        ms_level = spectrum.getMSLevel()
         drift_time = spectrum.getDriftTime()
         rt = spectrum.getRT()
         mz_array, intensity_array = spectrum.get_peaks()
@@ -53,16 +57,19 @@ def extract_spectrum_data(exp):
             base_mz = None
             base_intensity = None
 
+        # Record everything
         drift_times.append(drift_time)
         retention_times.append(rt)
         mz_values.append(base_mz)
         base_peak_intensities.append(base_intensity)
+        ms_levels.append(ms_level)
 
         max_rt = max(max_rt, rt)
 
     df = pd.DataFrame(
         {
             "Spectrum Number": range(1, len(drift_times) + 1),
+            "MS Level": ms_levels,
             "Drift Time (ms)": drift_times,
             "Retention Time (sec)": retention_times,
             "m/z": mz_values,
@@ -70,68 +77,20 @@ def extract_spectrum_data(exp):
         }
     )
 
-    # Filter based on m/z and Drift Time ranges
-    filtered_df = df[
-        (df["m/z"].between(0, 1600)) & (df["Drift Time (ms)"].between(0, 60))
-    ].reset_index(drop=True)
+    return df
 
-    if not filtered_df.empty:
-        print("\n[INFO] Filtered spectra:")
+
+if __name__ == "__main__":
+    # Select the mzML file
+    file_path = select_file()
+
+    # Handle the uploaded file
+    exp = handle_uploaded_file(file_path)
+
+    # Extract spectrum data
+    if exp:
+        df = extract_spectrum_data(exp)
+        print(df)
     else:
-        print("[INFO] No spectra matched the specified m/z and DT criteria.")
-
-    return filtered_df
-
-
-def plot_3d_mz_dt_intensity(df):
-    """Creates a 3D scatter plot of m/z, Drift Time, and Total Intensity."""
-    if df.empty:
-        print("[INFO] No data to plot in 3D.")
-        return
-
-    fig = plt.figure(figsize=(10, 7))
-    ax = fig.add_subplot(111, projection="3d")
-
-    ax.scatter(
-        df["m/z"],
-        df["Drift Time (ms)"],
-        df["Intensity"],
-        c=df["Intensity"],
-        cmap="viridis",
-        s=50,
-    )
-
-    ax.set_xlabel("m/z", labelpad=10)
-    ax.set_ylabel("Drift Time (ms)", labelpad=10)
-    ax.set_zlabel("Intensity", labelpad=10)
-    ax.set_title("3D Plot: m/z vs Drift Time vs Total Base Peak Intensity")
-
-    plt.tight_layout()
-    plt.show()
-
-
-def plot_3d_mz_rt_intensity(df):
-    """Creates a 3D scatter plot of m/z, Drift Time, and Total Intensity."""
-    if df.empty:
-        print("[INFO] No data to plot in 3D.")
-        return
-
-    fig = plt.figure(figsize=(10, 7))
-    ax = fig.add_subplot(111, projection="3d")
-
-    ax.scatter(
-        df["m/z"],
-        df["Retention Time (sec)"],
-        df["Intensity"],
-        c=df["Intensity"],
-        cmap="viridis",
-        s=50,
-    )
-
-    ax.set_xlabel("m/z", labelpad=10)
-    ax.set_ylabel("Retention Time (sec)", labelpad=10)
-    ax.set_zlabel("Intensity", labelpad=10)
-    ax.set_title("3D Plot: m/z vs Retention Time (sec) vs Total Base Peak Intensity")
-
-    plt.tight_layout()
-    plt.show()
+        print("[ERROR] Failed to load mzML file.")
+    df.to_csv("extracted_spectrum_data.csv", index=False)

@@ -7,18 +7,18 @@ warnings.filterwarnings(
     category=UserWarning,
 )
 
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor  # noqa: E402
 
-import numpy as np
-import pandas as pd
-from pyopenms import *  # Must come after warning suppression
-from scipy.optimize import curve_fit
+import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
+from pyopenms import *  # Must come after warning suppression  # noqa: E402, F403
+from scipy.optimize import curve_fit  # noqa: E402
 
-from determining_peak_profile import (
+from determining_peak_profile import (  # noqa: E402
     exclude_noise_points,
     load_or_process_data,
 )
-from Open_MS_config import select_file
+from Open_MS_config import select_file  # noqa: E402
 
 
 def calculate_cluster_relative_intensity(df):
@@ -175,7 +175,7 @@ def determine_dt_center(cluster_df):
 
 def determine_rt_center(cluster_df):
     if cluster_df.empty:
-        return None, None
+        return None, None, None
 
     cluster_df["rounded_rt"] = cluster_df["Retention Time (sec)"].round(4)
     grouped = cluster_df.groupby("rounded_rt")["Cluster Relative Intensity"]
@@ -184,7 +184,7 @@ def determine_rt_center(cluster_df):
         stats = grouped.quantile(0.99).reset_index()
         stats["count"] = grouped.count().values
     except Exception:
-        return None, None
+        return None, None, None
 
     x_data = stats["rounded_rt"].values
     y_data = stats["Cluster Relative Intensity"].values
@@ -196,7 +196,12 @@ def determine_rt_center(cluster_df):
             weights=cluster_df["Cluster Relative Intensity"],
         )
         peak_intensity = cluster_df["Cluster Relative Intensity"].max()
-        return weighted_mean, peak_intensity
+        # fallback spread estimate using range
+        spread = (
+            cluster_df["Retention Time (sec)"].quantile(0.95)
+            - cluster_df["Retention Time (sec)"].quantile(0.05)
+        ) / 2  # Approximate to match Gaussian sigma scale
+        return weighted_mean, peak_intensity, spread
 
     a_guess = np.max(y_data)
     mu_guess = x_data[np.argmax(y_data)]
@@ -211,15 +216,20 @@ def determine_rt_center(cluster_df):
             sigma=1 / weights,
             absolute_sigma=True,
         )
-        a, mu = popt[0], popt[1]
-        return mu, a
+        a, mu, sigma = popt
+        return mu, a, sigma
     except RuntimeError:
         weighted_mean = np.average(
             cluster_df["Retention Time (sec)"],
             weights=cluster_df["Cluster Relative Intensity"],
         )
         peak_intensity = cluster_df["Cluster Relative Intensity"].max()
-        return weighted_mean, peak_intensity
+        # fallback spread estimate using quantile range
+        spread = (
+            cluster_df["Retention Time (sec)"].quantile(0.95)
+            - cluster_df["Retention Time (sec)"].quantile(0.05)
+        ) / 2
+        return weighted_mean, peak_intensity, spread
 
 
 def process_single_cluster(cluster_tuple):
@@ -228,7 +238,7 @@ def process_single_cluster(cluster_tuple):
 
     mz_center, amp_mz = determine_mz_center(cluster_df)
     dt_center, amp_dt = determine_dt_center(cluster_df)
-    rt_center, amp_rt = determine_rt_center(cluster_df)
+    rt_center, amp_rt, sigma_rt = determine_rt_center(cluster_df)
 
     return {
         "Cluster": cluster_id,
@@ -239,6 +249,7 @@ def process_single_cluster(cluster_tuple):
         "Amplitude_mz": amp_mz,
         "Amplitude_dt": amp_dt,
         "Amplitude_rt": amp_rt,
+        "Sigma_rt": sigma_rt,
     }
 
 
@@ -283,4 +294,4 @@ if __name__ == "__main__":
 
     # Output the report
     print("\nCluster Centroid Report:")
-    print(report_df)
+    report_df.to_csv("cluster_centroid_report_including_MS.csv", index=False)
