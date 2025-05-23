@@ -141,39 +141,6 @@ def exclude_noise_points(df, exclude_noise=True):
     return df
 
 
-def extract_cluster_by_criteria(
-    df,
-    mz_target,
-    dt_target,
-    rt_target,
-    mz_tolerance=0.1,
-    dt_tolerance=1,
-    rt_tolerance=50,
-):
-    """
-    Extract a cluster that matches the specified m/z, DT, and RT criteria.
-    """
-    cluster_candidates = df[
-        (df["m/z_ion"].between(mz_target - mz_tolerance, mz_target + mz_tolerance))
-        & (df["DT"].between(dt_target - dt_tolerance, dt_target + dt_tolerance))
-        & (
-            df["Retention Time (sec)"].between(
-                rt_target - rt_tolerance, rt_target + rt_tolerance
-            )
-        )
-    ]
-
-    if cluster_candidates.empty:
-        print("No clusters found matching the criteria.")
-        return pd.DataFrame()
-
-    # Find the most representative cluster among the candidates
-    selected_cluster = cluster_candidates["Cluster"].mode().iloc[0]
-    cluster_df = df[df["Cluster"] == selected_cluster]
-    print(f"Extracted Cluster: {selected_cluster} with {len(cluster_df)} rows.")
-    return cluster_df
-
-
 def extract_cluster_by_number(df, cluster_id):
     """
     Extract and return the DataFrame for a specific cluster number.
@@ -207,7 +174,7 @@ if __name__ == "__main__":
     df = exclude_noise_points(df, exclude_noise=exclude_noise_flag)
 
     # Extract cluster by specified criteria
-    cluster_df = extract_cluster_by_number(df, cluster_id=27142)
+    cluster_df = extract_cluster_by_number(df, cluster_id=30211)
 
     print("\nExtracted Cluster by Criteria:")
     print(cluster_df)
