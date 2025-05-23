@@ -31,13 +31,13 @@ def calculate_CCS_for_mzML_files(df, beta, tfix):
     if not isinstance(df, pd.DataFrame):
         raise TypeError("Input must be a pandas DataFrame.")
 
-    df = df.rename(columns={"Drift Time (ms)": "DT", "m/z": "m/z_ion"})
+    df = df.rename(columns={"Drift Time (ms)": "DT", "m/z": "Min m/z"})
 
-    if "DT" not in df.columns or "m/z_ion" not in df.columns:
-        raise ValueError("DataFrame must contain 'DT' and 'm/z_ion' columns.")
+    if "DT" not in df.columns or "Min m/z" not in df.columns:
+        raise ValueError("DataFrame must contain 'DT' and 'Min m/z' columns.")
 
     DT_gas = 28.006148
-    gamma = (df["m/z_ion"] / (DT_gas + df["m/z_ion"])) ** 0.5
+    gamma = (df["Min m/z"] / (DT_gas + df["Min m/z"])) ** 0.5
     adjusted_dt = df["DT"] - tfix
     df["CCS (Å^2)"] = adjusted_dt / (beta * gamma)
     return df
@@ -94,7 +94,7 @@ def create_distance_matrix_sparse(
     rt_tolerance,
     ccs_tolerance,
 ):
-    mz_values = df["m/z_ion"].values.astype(np.float32)
+    mz_values = df["Min m/z"].values.astype(np.float32)
     rt_values = df["Retention Time (sec)"].values.astype(np.float32)
     ccs_values = df["CCS (Å^2)"].values.astype(np.float32)
     eps_cutoff = 3 ** (0.5)

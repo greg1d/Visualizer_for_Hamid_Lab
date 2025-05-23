@@ -191,33 +191,15 @@ def exclude_noise_points(df, exclude_noise=True):
 
 
 def pick_cluster_by_base_mz(
-    df,
-    target_mz=551.5076288832349,
-    mz_tolerance=1e-4,
-    target_dt=None,
-    dt_tolerance=1.0,
+    df, target_mz=551.5076288832349, mz_tolerance=1e-4, mz_column="Min m/z"
 ):
-    """
-    Find and return all clusters that contain MS Level 2 spectra with a base peak m/z
-    and optional drift time (DT) near the target.
+    if mz_column not in df.columns:
+        print(f"[ERROR] Column '{mz_column}' not found.")
+        return pd.DataFrame()
 
-    Parameters:
-    - df (pd.DataFrame): The full DataFrame with clustering results.
-    - target_mz (float): The m/z value to look for.
-    - mz_tolerance (float): Acceptable deviation from the target m/z.
-    - target_dt (float or None): Optional drift time to match.
-    - dt_tolerance (float): Tolerance range for DT filtering.
-
-    Returns:
-    - pd.DataFrame: All rows from matching clusters.
-    """
     condition = (df["MS Level"] == 2) & (
-        df["m/z_ion"].sub(target_mz).abs() <= mz_tolerance
+        df[mz_column].sub(target_mz).abs() <= mz_tolerance
     )
-
-    if target_dt is not None:
-        condition &= df["DT"].sub(target_dt).abs() <= dt_tolerance
-
     match = df[condition]
 
     if not match.empty:
@@ -225,7 +207,7 @@ def pick_cluster_by_base_mz(
         print(f"[INFO] Found {len(cluster_ids)} matching cluster(s): {cluster_ids}")
         return df[df["Cluster"].isin(cluster_ids)].copy()
     else:
-        print("[INFO] No matching m/z (and DT) found in any MS Level 2 cluster.")
+        print("[INFO] No matching cluster found.")
         return pd.DataFrame()
 
 
@@ -245,16 +227,9 @@ if __name__ == "__main__":
     df = load_or_process_data(
         file_path, tfix, beta, ppm_tolerance, rt_tolerance, ccs_tolerance
     )
-
     # Optionally exclude noise points
     df = exclude_noise_points(df, exclude_noise=exclude_noise_flag)
 
-    df = pick_cluster_by_base_mz(
-        df,
-        target_mz=551.50,
-        mz_tolerance=1e-3,
-        target_dt=33.0,  # optional: set to None to skip DT filtering
-        dt_tolerance=0.5,
-    )
-    print("\nCluster for Debugging:")
+    df = pick_cluster_by_base_mz(df, target_mz=551.5076288832349, mz_tolerance=0.001)
+
     print(df)

@@ -68,9 +68,9 @@ def determine_mz_center(cluster_df):
     if cluster_df.empty:
         print("Empty cluster.")
         return None
-
+    print(cluster_df.columns)
     # Bin by rounding m/z
-    cluster_df["rounded_mz"] = cluster_df["m/z_ion"]
+    cluster_df["rounded_mz"] = cluster_df["Min m/z"]
 
     # Group by binned m/z, calculate 99th percentile and count of values
     grouped = cluster_df.groupby("rounded_mz")["Base Peak Intensity"]
