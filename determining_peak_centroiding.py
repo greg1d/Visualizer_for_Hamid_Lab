@@ -14,7 +14,6 @@ import pandas as pd  # noqa: E402
 from pyopenms import *  # Must come after warning suppression  # noqa: E402, F403
 from scipy.optimize import curve_fit  # noqa: E402
 
-from determining_peak_profile import extract_cluster_by_number
 from implementing_SQL import (  # noqa: E402
     exclude_noise_points,
     load_or_process_data,
@@ -284,7 +283,7 @@ if __name__ == "__main__":
 
     # Example Data - Ensure this is a DataFrame
     file_path = select_file()
-    ppm_tolerance = 1e-5
+    ppm_tolerance = 1.5e-5
     rt_tolerance = 30
     ccs_tolerance = 0.02
 
@@ -294,10 +293,19 @@ if __name__ == "__main__":
     )
 
     # Optionally exclude noise points
-    df = exclude_noise_points(df, exclude_noise=exclude_noise_flag)
+    cluster_df = exclude_noise_points(df, exclude_noise=exclude_noise_flag)
 
     # Extract cluster by specified criteria
-    cluster_df = extract_cluster_by_number(df, cluster_id=31848)
-    debug_df = determine_mz_center(cluster_df)
-    print("\nExtracted Cluster by Criteria:")
-    print(debug_df)
+    cluster_df = calculate_cluster_relative_intensity(cluster_df)
+    cluster_df = generate_cluster_centroid_report(cluster_df)
+    cluster_df = extract_cluster_by_mz_dt(
+        cluster_df,
+        mz_center=311.27,
+        mz_tolerance=0.03,
+        dt_center=34.5,
+        dt_tolerance=1,
+        mz_col="m/z_ion_center",
+        dt_col="DT_center",
+    )
+
+    print(cluster_df)
