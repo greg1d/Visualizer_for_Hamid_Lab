@@ -300,9 +300,9 @@ if __name__ == "__main__":
     cluster_df = generate_cluster_centroid_report(cluster_df)
     cluster_df = extract_cluster_by_mz_dt(
         cluster_df,
-        mz_center=311.27,
-        mz_tolerance=0.03,
-        dt_center=34.5,
+        mz_center=690.5,
+        mz_tolerance=0.2,
+        dt_center=48.5,
         dt_tolerance=1,
         mz_col="m/z_ion_center",
         dt_col="DT_center",
