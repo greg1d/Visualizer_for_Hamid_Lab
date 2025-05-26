@@ -30,14 +30,9 @@ def calculate_CCS_for_csv_files(df, beta, tfix):
     if not isinstance(df, pd.DataFrame):
         raise TypeError("Input must be a pandas DataFrame.")
 
-    df = df.rename(columns={"Mass": "Min m/z", "Drift": "DT"})
-
-    if "DT" not in df.columns or "Min m/z" not in df.columns:
-        raise ValueError("DataFrame must contain 'DT' and 'Min m/z' columns.")
-
     DT_gas = 28.006148
-    gamma = (df["Min m/z"] / (DT_gas + df["Min m/z"])) ** 0.5
-    adjusted_dt = df["DT"] - tfix
+    gamma = (df["Mass"] / (DT_gas + df["Mass"])) ** 0.5
+    adjusted_dt = df["Drift"] - tfix
     df["CCS (Å^2)"] = adjusted_dt / (beta * gamma)
     return df
 
@@ -88,7 +83,7 @@ def create_distance_matrix_sparse(
     ppm_tolerance,
     ccs_tolerance,
 ):
-    mz_values = df["Min m/z"].values.astype(np.float32)
+    mz_values = df["Mass"].values.astype(np.float32)
     ccs_values = df["CCS (Å^2)"].values.astype(np.float32)
     eps_cutoff = 2 ** (0.5)
 
@@ -143,7 +138,6 @@ if __name__ == "__main__":
     # Example Data - Ensure this is a DataFrame
 
     df = read_csv_with_numeric_header("hamid_labs_data/SB.csv")
-    print(df.head())
     tfix = -0.067817
     beta = 0.138218
     df = calculate_CCS_for_csv_files(df, beta, tfix)
@@ -153,3 +147,4 @@ if __name__ == "__main__":
 
     sparse_matrix = create_distance_matrix_sparse(df, ppm_tolerance, ccs_tolerance)
     df = perform_optimized_clustering(df, sparse_matrix)
+    print(df)
