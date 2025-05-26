@@ -8,12 +8,12 @@ warnings.filterwarnings(
 )
 
 
+import numpy as np
 import pandas as pd  # noqa: E402
 from pyopenms import *  # Must come after warning suppression  # noqa: E402, F403
 
 from determining_peak_centroiding import (  # noqa: E402
     calculate_cluster_relative_intensity,
-    extract_cluster_by_mz_dt,
     generate_cluster_centroid_report,
 )
 from implementing_SQL import (  # noqa: E402
@@ -83,69 +83,107 @@ def make_clusters_pretty(df):
     return df
 
 
-def reassign_similar_clusters(
-    cluster_df,
-    full_df,
+def crude_filter_clusters(
+    df,
+    mass_min=0,
+    mass_max=np.inf,
+    rt_min=0,
+    rt_max=np.inf,
+    dt_min=0,
+    dt_max=np.inf,
+    intensity_min=0,
+):
+    """
+    Apply crude bounds to filter out rows outside of specified ranges.
+    Assumes 'm/z', 'RT (min)', 'DT (ms)', and 'Peak Intensity' columns exist.
+
+    Returns:
+    - Filtered DataFrame.
+    """
+    return df[
+        (df["m/z"] >= mass_min)
+        & (df["m/z"] <= mass_max)
+        & (df["RT (min)"] >= rt_min)
+        & (df["RT (min)"] <= rt_max)
+        & (df["DT (ms)"] >= dt_min)
+        & (df["DT (ms)"] <= dt_max)
+        & (df["Peak Intensity"] >= intensity_min)
+    ].copy()
+
+
+def combine_similar_clusters(
+    df,
     beta,
     tfix,
     ppm_tolerance=1.5e-5,
     rt_tolerance=0.5,
     ccs_tolerance=0.02,
+    mass_min=0,
+    mass_max=np.inf,
+    rt_min=0,
+    rt_max=np.inf,
+    dt_min=0,
+    dt_max=np.inf,
+    intensity_min=0,
 ):
     """
-    Reassigns similar clusters to a shared new cluster ID in full_df based on similarity in m/z, RT, and CCS.
-
-    Parameters:
-    - cluster_df (pd.DataFrame): Cluster-level summary. Must include columns for m/z, RT, and DT.
-    - full_df (pd.DataFrame): Raw data with 'Cluster', 'Min m/z', 'Drift Time (ms)', and 'Base Peak Intensity'.
-    - beta, tfix: Calibration constants for CCS calculation.
-    - ppm_tolerance: m/z tolerance in parts-per-million.
-    - rt_tolerance: RT tolerance in minutes.
-    - ccs_tolerance: CCS tolerance in Å^2.
-
-    Returns:
-    - pd.DataFrame: A copy of full_df with updated Cluster assignments in 'Cluster', and original IDs in 'Original Cluster'.
+    Combines rows in the DataFrame that fall within specified tolerances
+    for m/z (ppm), RT (min), and CCS (Å²), and recalculates CCS.
     """
     import numpy as np
     from scipy.spatial import KDTree
 
-    if cluster_df.empty:
-        return full_df.copy()
+    if df.empty:
+        return df
 
-    # Normalize column names if needed
-    column_map = {
+    df = df.reset_index(drop=True).copy()
+
+    # Rename raw columns
+    rename_map = {
         "m/z_ion_center": "m/z",
         "Retention Time (sec)_center": "RT (min)",
         "DT_center": "DT (ms)",
     }
-    cluster_df = cluster_df.rename(
-        columns={k: v for k, v in column_map.items() if k in cluster_df.columns}
+    df.rename(
+        columns={k: v for k, v in rename_map.items() if k in df.columns}, inplace=True
     )
 
-    # Check required columns
-    required = ["Cluster", "m/z", "RT (min)", "DT (ms)"]
-    for col in required:
-        if col not in cluster_df.columns:
-            raise ValueError(f"[ERROR] Missing required column: '{col}' in cluster_df.")
+    # Convert RT from seconds to minutes
+    df["RT (min)"] = df["RT (min)"] / 60
 
-    cluster_df = cluster_df.reset_index(drop=True).copy()
-    full_df = full_df.copy()
+    # Apply crude filters
+    df = crude_filter_clusters(
+        df,
+        mass_min=mass_min,
+        mass_max=mass_max,
+        rt_min=rt_min,
+        rt_max=rt_max,
+        dt_min=dt_min,
+        dt_max=dt_max,
+        intensity_min=intensity_min,
+    )
 
-    # Step 1: Estimate CCS for each cluster
+    if df.empty:
+        return df
+
+    # Estimate CCS
     DT_gas = 28.006148
-    gamma = (cluster_df["m/z"] / (DT_gas + cluster_df["m/z"])) ** 0.5
-    adjusted_dt = cluster_df["DT (ms)"] - tfix
-    cluster_df["CCS (Å^2)"] = adjusted_dt / (beta * gamma)
+    gamma = (df["m/z"] / (DT_gas + df["m/z"])) ** 0.5
+    adjusted_dt = df["DT (ms)"] - tfix
+    df["CCS (Å^2)"] = adjusted_dt / (beta * gamma)
 
-    # Step 2: Build KDTree for m/z, RT, CCS comparison
     used = set()
-    cluster_to_new_id = {}
-    new_cluster_id = 0
+    combined_rows = []
 
-    data = cluster_df[["m/z", "RT (min)", "CCS (Å^2)"]].values
+    data = (
+        df[["m/z", "RT (min)", "CCS (Å^2)"]].replace([np.inf, -np.inf], np.nan).dropna()
+    )
+    valid_indices = data.index.to_list()
+    df = df.loc[valid_indices].reset_index(drop=True)
+    data = df[["m/z", "RT (min)", "CCS (Å^2)"]].values
     tree = KDTree(data)
 
-    for i in range(len(cluster_df)):
+    for i in range(len(df)):
         if i in used:
             continue
 
@@ -163,20 +201,40 @@ def reassign_similar_clusters(
         ]
 
         used.update(group)
-        group_ids = cluster_df.iloc[group]["Cluster"].unique()
+        group_df = df.iloc[group]
 
-        for cid in group_ids:
-            cluster_to_new_id[cid] = new_cluster_id
+        avg_mz = group_df["m/z"].mean()
+        avg_rt = group_df["RT (min)"].mean()
+        avg_dt = group_df["DT (ms)"].mean()
+        sum_intensity = group_df["Peak Intensity"].sum()
+        avg_ms_level = (
+            int(round(group_df["MS Level"].mean()))
+            if "MS Level" in group_df.columns and not group_df["MS Level"].isna().all()
+            else -1
+        )
+        avg_sigma_rt = (
+            group_df["Sigma_rt"].mean()
+            if "Sigma_rt" in group_df.columns and not group_df["Sigma_rt"].isna().all()
+            else np.nan
+        )
 
-        new_cluster_id += 1
+        gamma_avg = (avg_mz / (DT_gas + avg_mz)) ** 0.5
+        adj_dt = avg_dt - tfix
+        new_ccs = adj_dt / (beta * gamma_avg)
 
-    # Step 3: Apply new cluster ID map to full_df
-    full_df["Original Cluster"] = full_df["Cluster"]
-    full_df["Cluster"] = (
-        full_df["Cluster"].map(cluster_to_new_id).fillna(full_df["Cluster"]).astype(int)
-    )
+        combined_rows.append(
+            {
+                "RT (min)": round(avg_rt, 2),
+                "m/z": round(avg_mz, 4),
+                "DT (ms)": round(avg_dt, 2),
+                "CCS (Å^2)": round(new_ccs, 2),
+                "Peak Intensity": sum_intensity,
+                "MS Level": avg_ms_level,
+                "Sigma_rt": avg_sigma_rt,
+            }
+        )
 
-    return full_df
+    return pd.DataFrame(combined_rows)
 
 
 if __name__ == "__main__":
@@ -186,38 +244,42 @@ if __name__ == "__main__":
 
     # Example Data - Ensure this is a DataFrame
     file_path = select_file()
-    ppm_tolerance = 2e-5
+    ppm_tolerance = 1.5e-5
     rt_tolerance = 30
     ccs_tolerance = 0.02
 
     # Load or process the data (caching with SQLite in .temp)
-    full_df = load_or_process_data(
+    df = load_or_process_data(
         file_path, tfix, beta, ppm_tolerance, rt_tolerance, ccs_tolerance
     )
 
     # Optionally exclude noise points
-    full_df = exclude_noise_points(full_df, exclude_noise=exclude_noise_flag)
+    cluster_df = exclude_noise_points(df, exclude_noise=exclude_noise_flag)
 
     # Extract cluster by specified criteria
-    cluster_df = calculate_cluster_relative_intensity(full_df)
+    cluster_df = calculate_cluster_relative_intensity(cluster_df)
     cluster_df = generate_cluster_centroid_report(cluster_df)
+    mass_min = 200
+    mass_max = 1000
+    rt_min = 0.5
+    rt_max = 10
+    dt_min = 0
+    dt_max = 60
+    intensity_min = 0
 
-    full_df_reassigned = reassign_similar_clusters(
+    cluster_df = combine_similar_clusters(
         cluster_df,
-        full_df,
         beta,
         tfix,
-        ppm_tolerance,
-        rt_tolerance,
-        ccs_tolerance,
+        ppm_tolerance=1.5e-5,
+        rt_tolerance=0.5,
+        ccs_tolerance=0.02,
+        mass_min=mass_min,
+        mass_max=mass_max,
+        rt_min=rt_min,
+        rt_max=rt_max,
+        dt_min=dt_min,
+        dt_max=dt_max,
+        intensity_min=intensity_min,
     )
-    new_centroid_df = generate_cluster_centroid_report(full_df_reassigned)
-    cluster_df = extract_cluster_by_mz_dt(
-        new_centroid_df,
-        mz_center=311.27,
-        mz_tolerance=0.03,
-        dt_center=34.5,
-        dt_tolerance=1,
-        mz_col="m/z_ion_center",
-        dt_col="DT_center",
-    )
+    cluster_df.to_csv("combined_clusters.csv", index=False)

@@ -14,6 +14,7 @@ import pandas as pd  # noqa: E402
 from pyopenms import *  # Must come after warning suppression  # noqa: E402, F403
 from scipy.optimize import curve_fit  # noqa: E402
 
+from determining_peak_profile import extract_cluster_by_number
 from implementing_SQL import (  # noqa: E402
     exclude_noise_points,
     load_or_process_data,
@@ -61,8 +62,23 @@ def determine_mz_center(cluster_df):
     if cluster_df.empty:
         return None, None
 
-    cluster_df["rounded_mz"] = cluster_df["Min m/z"].round(4)
-    grouped = cluster_df.groupby("rounded_mz")["Cluster Relative Intensity"]
+    # Remove outliers in 'Base Peak m/z' using IQR method
+    q1 = cluster_df["Base Peak m/z"].quantile(0.25)
+    q3 = cluster_df["Base Peak m/z"].quantile(0.75)
+    iqr = q3 - q1
+    lower_bound = q1 - 1.5 * iqr
+    upper_bound = q3 + 1.5 * iqr
+
+    filtered_df = cluster_df[
+        (cluster_df["Base Peak m/z"] >= lower_bound)
+        & (cluster_df["Base Peak m/z"] <= upper_bound)
+    ]
+
+    if filtered_df.empty:
+        return None, None
+
+    filtered_df["rounded_mz"] = filtered_df["Base Peak m/z"].round(4)
+    grouped = filtered_df.groupby("rounded_mz")["Cluster Relative Intensity"]
 
     try:
         stats = grouped.quantile(0.99).reset_index()
@@ -76,11 +92,13 @@ def determine_mz_center(cluster_df):
 
     if len(x_data) < 3:
         weighted_mean = np.average(
-            cluster_df["Min m/z"], weights=cluster_df["Cluster Relative Intensity"]
+            filtered_df["Base Peak m/z"],
+            weights=filtered_df["Cluster Relative Intensity"],
         )
-        peak_intensity = cluster_df["Cluster Relative Intensity"].max()
+        peak_intensity = filtered_df["Cluster Relative Intensity"].max()
         return weighted_mean, peak_intensity
 
+    # Initial guesses for Gaussian fit
     a_guess = np.max(y_data)
     mu_guess = x_data[np.argmax(y_data)]
     sigma_guess = (x_data.max() - x_data.min()) / 6
@@ -98,9 +116,10 @@ def determine_mz_center(cluster_df):
         return mu, a
     except RuntimeError:
         weighted_mean = np.average(
-            cluster_df["Min m/z"], weights=cluster_df["Cluster Relative Intensity"]
+            filtered_df["Base Peak m/z"],
+            weights=filtered_df["Cluster Relative Intensity"],
         )
-        peak_intensity = cluster_df["Cluster Relative Intensity"].max()
+        peak_intensity = filtered_df["Cluster Relative Intensity"].max()
         return weighted_mean, peak_intensity
 
 
@@ -108,8 +127,22 @@ def determine_dt_center(cluster_df):
     if cluster_df.empty:
         return None, None
 
-    cluster_df["rounded_dt"] = cluster_df["DT"].round(4)
-    grouped = cluster_df.groupby("rounded_dt")["Cluster Relative Intensity"]
+    # Remove outliers in 'DT' using IQR method
+    q1 = cluster_df["DT"].quantile(0.25)
+    q3 = cluster_df["DT"].quantile(0.75)
+    iqr = q3 - q1
+    lower_bound = q1 - 1.5 * iqr
+    upper_bound = q3 + 1.5 * iqr
+
+    filtered_df = cluster_df[
+        (cluster_df["DT"] >= lower_bound) & (cluster_df["DT"] <= upper_bound)
+    ]
+
+    if filtered_df.empty:
+        return None, None
+
+    filtered_df["rounded_dt"] = filtered_df["DT"].round(4)
+    grouped = filtered_df.groupby("rounded_dt")["Cluster Relative Intensity"]
 
     try:
         stats = grouped.quantile(0.99).reset_index()
@@ -123,11 +156,12 @@ def determine_dt_center(cluster_df):
 
     if len(x_data) < 3:
         weighted_mean = np.average(
-            cluster_df["DT"], weights=cluster_df["Cluster Relative Intensity"]
+            filtered_df["DT"], weights=filtered_df["Cluster Relative Intensity"]
         )
-        peak_intensity = cluster_df["Cluster Relative Intensity"].max()
+        peak_intensity = filtered_df["Cluster Relative Intensity"].max()
         return weighted_mean, peak_intensity
 
+    # Initial guesses for Gaussian fit
     a_guess = np.max(y_data)
     mu_guess = x_data[np.argmax(y_data)]
     sigma_guess = (x_data.max() - x_data.min()) / 6
@@ -145,9 +179,9 @@ def determine_dt_center(cluster_df):
         return mu, a
     except RuntimeError:
         weighted_mean = np.average(
-            cluster_df["DT"], weights=cluster_df["Cluster Relative Intensity"]
+            filtered_df["DT"], weights=filtered_df["Cluster Relative Intensity"]
         )
-        peak_intensity = cluster_df["Cluster Relative Intensity"].max()
+        peak_intensity = filtered_df["Cluster Relative Intensity"].max()
         return weighted_mean, peak_intensity
 
 
@@ -155,8 +189,23 @@ def determine_rt_center(cluster_df):
     if cluster_df.empty:
         return None, None, None
 
-    cluster_df["rounded_rt"] = cluster_df["Retention Time (sec)"].round(4)
-    grouped = cluster_df.groupby("rounded_rt")["Cluster Relative Intensity"]
+    # Remove outliers in 'Retention Time (sec)' using IQR method
+    q1 = cluster_df["Retention Time (sec)"].quantile(0.25)
+    q3 = cluster_df["Retention Time (sec)"].quantile(0.75)
+    iqr = q3 - q1
+    lower_bound = q1 - 1.5 * iqr
+    upper_bound = q3 + 1.5 * iqr
+
+    filtered_df = cluster_df[
+        (cluster_df["Retention Time (sec)"] >= lower_bound)
+        & (cluster_df["Retention Time (sec)"] <= upper_bound)
+    ]
+
+    if filtered_df.empty:
+        return None, None, None
+
+    filtered_df["rounded_rt"] = filtered_df["Retention Time (sec)"].round(4)
+    grouped = filtered_df.groupby("rounded_rt")["Cluster Relative Intensity"]
 
     try:
         stats = grouped.quantile(0.99).reset_index()
@@ -170,15 +219,14 @@ def determine_rt_center(cluster_df):
 
     if len(x_data) < 3:
         weighted_mean = np.average(
-            cluster_df["Retention Time (sec)"],
-            weights=cluster_df["Cluster Relative Intensity"],
+            filtered_df["Retention Time (sec)"],
+            weights=filtered_df["Cluster Relative Intensity"],
         )
-        peak_intensity = cluster_df["Cluster Relative Intensity"].max()
-        # fallback spread estimate using range
+        peak_intensity = filtered_df["Cluster Relative Intensity"].max()
         spread = (
-            cluster_df["Retention Time (sec)"].quantile(0.95)
-            - cluster_df["Retention Time (sec)"].quantile(0.05)
-        ) / 2  # Approximate to match Gaussian sigma scale
+            filtered_df["Retention Time (sec)"].quantile(0.95)
+            - filtered_df["Retention Time (sec)"].quantile(0.05)
+        ) / 2
         return weighted_mean, peak_intensity, spread
 
     a_guess = np.max(y_data)
@@ -198,14 +246,13 @@ def determine_rt_center(cluster_df):
         return mu, a, sigma
     except RuntimeError:
         weighted_mean = np.average(
-            cluster_df["Retention Time (sec)"],
-            weights=cluster_df["Cluster Relative Intensity"],
+            filtered_df["Retention Time (sec)"],
+            weights=filtered_df["Cluster Relative Intensity"],
         )
-        peak_intensity = cluster_df["Cluster Relative Intensity"].max()
-        # fallback spread estimate using quantile range
+        peak_intensity = filtered_df["Cluster Relative Intensity"].max()
         spread = (
-            cluster_df["Retention Time (sec)"].quantile(0.95)
-            - cluster_df["Retention Time (sec)"].quantile(0.05)
+            filtered_df["Retention Time (sec)"].quantile(0.95)
+            - filtered_df["Retention Time (sec)"].quantile(0.05)
         ) / 2
         return weighted_mean, peak_intensity, spread
 
@@ -297,15 +344,9 @@ if __name__ == "__main__":
 
     # Extract cluster by specified criteria
     cluster_df = calculate_cluster_relative_intensity(cluster_df)
-    cluster_df = generate_cluster_centroid_report(cluster_df)
-    cluster_df = extract_cluster_by_mz_dt(
-        cluster_df,
-        mz_center=690.5,
-        mz_tolerance=0.2,
-        dt_center=48.5,
-        dt_tolerance=1,
-        mz_col="m/z_ion_center",
-        dt_col="DT_center",
-    )
 
-    print(cluster_df)
+    cluster_df_1 = extract_cluster_by_number(cluster_df, cluster_id=23437)
+    cluster_df_2 = extract_cluster_by_number(cluster_df, cluster_id=23517)
+
+    cluster_df_2 = generate_cluster_centroid_report(cluster_df_2)
+    print(cluster_df_2)
