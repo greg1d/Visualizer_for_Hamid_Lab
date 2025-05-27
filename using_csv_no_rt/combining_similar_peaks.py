@@ -131,9 +131,7 @@ def collapse_peak_features_dt_dimension(df):
     return pd.DataFrame(collapsed)
 
 
-def identify_peak_features_mass_dimension(
-    df, ppm_tolerance=1e-5, drift_window=0.24, threshold_multiplier=3
-):
+def identify_peak_features_mass_dimension(df, ppm_tolerance=1e-5):
     """
     Identify peaks in the mass dimension using a shell tolerance for neighbors.
 
@@ -152,7 +150,8 @@ def identify_peak_features_mass_dimension(
     """
     if not {"Mass", "Drift", "Abundance"}.issubset(df.columns):
         raise ValueError("Missing required columns.")
-
+    drift_window = 0.24
+    threshold_multiplier = 3
     df = df.sort_values(["Mass", "Drift"]).reset_index(drop=True)
     peak_rows = []
 
@@ -185,7 +184,7 @@ def identify_peak_features_mass_dimension(
     return pd.DataFrame(peak_rows)
 
 
-def condense_mass_drift_features(features_df, ppm_tolerance=1e-5, drift_window=0.24):
+def condense_mass_drift_features(features_df, ppm_tolerance=1e-5):
     """
     For a given set of features, group those within 10 ppm mass and ±drift_window
     and keep only the row with the highest abundance in each group.
@@ -201,6 +200,7 @@ def condense_mass_drift_features(features_df, ppm_tolerance=1e-5, drift_window=0
     import numpy as np
     from scipy.spatial import KDTree
 
+    drift_window = 0.24
     if features_df.empty:
         return features_df
 
@@ -236,13 +236,23 @@ def condense_mass_drift_features(features_df, ppm_tolerance=1e-5, drift_window=0
     return pd.DataFrame(condensed_rows)
 
 
+def run_feature_identifying_workflow(df, tfix, beta, ppm_tolerance):
+    cluster_totals = collapse_peak_features_dt_dimension(df)
+
+    cluster_totals = identify_peak_features_mass_dimension(
+        cluster_totals, ppm_tolerance
+    )
+    cluster_totals = condense_mass_drift_features(cluster_totals, ppm_tolerance)
+    cluster_totals = calculate_CCS_for_csv_files(cluster_totals, beta, tfix)
+
+    return cluster_totals
+
+
 if __name__ == "__main__":
     df = read_csv_with_numeric_header("using_csv_no_rt/testing_data.csv")
     tfix = -0.067817
     beta = 0.138218
-    df = calculate_CCS_for_csv_files(df, beta, tfix)
-    cluster_totals = collapse_peak_features_dt_dimension(df)
+    ppm_tolerance = 1e-5
 
-    cluster_totals = identify_peak_features_mass_dimension(cluster_totals)
-    cluster_totals = condense_mass_drift_features(cluster_totals)
+    cluster_totals = run_feature_identifying_workflow(df, tfix, beta, ppm_tolerance)
     print(cluster_totals)
