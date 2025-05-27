@@ -84,54 +84,59 @@ def combine_similar_clusters(
     return pd.DataFrame(combined_rows)
 
 
-def merge_drift_bins_by_mass(df, drift_step=0.12, drift_tol=0.01):
+def identify_peak_features(df):
+    """
+    Identify peaks where a point's Abundance is greater than the mean + N*std
+    of all points within ± drift_window (excluding itself).
+
+    Parameters:
+    - df: DataFrame with columns ['Mass', 'Drift', 'Abundance']
+    - drift_window: the ± window (in Drift units) to consider neighbors
+    - threshold_multiplier: multiplier for standard deviation to define a peak
+
+    Returns:
+    - DataFrame with identified peak features
+    """
     if not {"Mass", "Drift", "Abundance"}.issubset(df.columns):
         raise ValueError("Missing required columns.")
-
-    result_rows = []
+    drift_window = 0.5
+    threshold_multiplier = 3
+    df = df.sort_values(["Mass", "Drift"]).reset_index(drop=True)
+    peak_rows = []
 
     for mass_val, group in df.groupby("Mass"):
         group = group.sort_values("Drift").reset_index(drop=True)
-        used = set()
 
         for i in range(len(group)):
-            if i in used:
-                continue
+            center_drift = group.loc[i, "Drift"]
+            center_abundance = group.loc[i, "Abundance"]
 
-            ref_drift = group.loc[i, "Drift"]
-            # Find continuous steps of 0.12 ± drift_tol
-            sub_group = group[
-                ((group["Drift"] - ref_drift) / drift_step)
-                .round()
-                .sub((group["Drift"] - ref_drift) / drift_step)
-                .abs()
-                < drift_tol
-            ]
-
-            sub_group_indices = sub_group.index
-            used.update(sub_group_indices)
-
-            total_abundance = sub_group["Abundance"].sum()
-            drift_of_max = sub_group.loc[sub_group["Abundance"].idxmax(), "Drift"]
-
-            result_rows.append(
-                {
-                    "Mass": round(mass_val, 5),
-                    "Drift": round(drift_of_max, 2),
-                    "Abundance": total_abundance,
-                }
+            # Define neighbor range (excluding self)
+            mask = (
+                (group["Drift"] >= center_drift - drift_window)
+                & (group["Drift"] <= center_drift + drift_window)
+                & (group["Drift"] != center_drift)
             )
 
-    return pd.DataFrame(result_rows)
+            neighborhood = group[mask]
+            if len(neighborhood) < 2:
+                continue  # skip if no sufficient context
+
+            mean = neighborhood["Abundance"].mean()
+            std = neighborhood["Abundance"].std()
+
+            if center_abundance > (mean + threshold_multiplier * std):
+                peak_rows.append(group.loc[i])
+
+    return pd.DataFrame(peak_rows)
 
 
 if __name__ == "__main__":
-    df = read_csv_with_numeric_header("hamid_labs_data/SB_testing.csv")
+    df = read_csv_with_numeric_header("using_csv_no_rt/testing_data.csv")
     tfix = -0.067817
     beta = 0.138218
     df = calculate_CCS_for_csv_files(df, beta, tfix)
 
-    cluster_totals = merge_drift_bins_by_mass(df)
-    df = calculate_CCS_for_csv_files(cluster_totals, beta, tfix)
+    cluster_totals = identify_peak_features(df)
 
-    print(df)
+    print(cluster_totals)
