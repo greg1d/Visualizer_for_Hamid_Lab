@@ -282,4 +282,5 @@ if __name__ == "__main__":
         dt_max=dt_max,
         intensity_min=intensity_min,
     )
+    print("saved to csv")
     cluster_df.to_csv("combined_clusters.csv", index=False)
