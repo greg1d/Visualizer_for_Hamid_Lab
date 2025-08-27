@@ -14,7 +14,6 @@ import pandas as pd  # noqa: E402
 from pyopenms import *  # Must come after warning suppression  # noqa: E402, F403
 from scipy.optimize import curve_fit  # noqa: E402
 
-from determining_peak_profile import extract_cluster_by_number
 from implementing_SQL import (  # noqa: E402
     exclude_noise_points,
     load_or_process_data,
@@ -300,10 +299,10 @@ def generate_cluster_centroid_report(df):
 
 def extract_cluster_by_mz_dt(
     df,
-    mz_center=551.5,
-    mz_tolerance=0.02,
-    dt_center=33.0,
-    dt_tolerance=0.1,
+    mz_center=960.7315,
+    mz_tolerance=0.1,
+    dt_center=44.0,
+    dt_tolerance=1,
     mz_col="m/z_ion_center",
     dt_col="DT_center",
 ):
@@ -345,8 +344,4 @@ if __name__ == "__main__":
     # Extract cluster by specified criteria
     cluster_df = calculate_cluster_relative_intensity(cluster_df)
 
-    cluster_df_1 = extract_cluster_by_number(cluster_df, cluster_id=23437)
-    cluster_df_2 = extract_cluster_by_number(cluster_df, cluster_id=23517)
-
-    cluster_df_2 = generate_cluster_centroid_report(cluster_df_2)
-    print(cluster_df_2)
+    cluster_df.to_csv("cluster_report.csv", index=False)

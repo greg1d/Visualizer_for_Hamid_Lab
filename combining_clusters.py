@@ -255,32 +255,31 @@ if __name__ == "__main__":
 
     # Optionally exclude noise points
     cluster_df = exclude_noise_points(df, exclude_noise=exclude_noise_flag)
-
+    cluster_df.to_csv("clustered_data.csv", index=False)
     # Extract cluster by specified criteria
     cluster_df = calculate_cluster_relative_intensity(cluster_df)
     cluster_df = generate_cluster_centroid_report(cluster_df)
-    mass_min = 200
-    mass_max = 1000
-    rt_min = 0.5
-    rt_max = 10
-    dt_min = 0
-    dt_max = 60
+    mass_min = 960.6
+    mass_max = 961
+    rt_min = 3
+    rt_max = 5
+    dt_min = 40
+    dt_max = 45
     intensity_min = 0
 
-    cluster_df = combine_similar_clusters(
-        cluster_df,
-        beta,
-        tfix,
-        ppm_tolerance=1.5e-5,
-        rt_tolerance=0.5,
-        ccs_tolerance=0.02,
-        mass_min=mass_min,
-        mass_max=mass_max,
-        rt_min=rt_min,
-        rt_max=rt_max,
-        dt_min=dt_min,
-        dt_max=dt_max,
-        intensity_min=intensity_min,
-    )
+    # cluster_df = combine_similar_clusters(
+    # cluster_df,
+    # beta,
+    # tfix,
+    # ppm_tolerance=1.5e-5,
+    # rt_tolerance=0.5,
+    # ccs_tolerance=0.02,
+    # mass_min=mass_min,
+    # mass_max=mass_max,
+    # rt_min=rt_min,
+    # rt_max=rt_max,
+    # dt_min=dt_min,
+    # dt_max=dt_max,
+    # intensity_min=intensity_min,
+    # )
     print("saved to csv")
-    cluster_df.to_csv("combined_clusters.csv", index=False)

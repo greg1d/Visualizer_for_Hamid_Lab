@@ -167,5 +167,6 @@ if __name__ == "__main__":
         df, ppm_tolerance, rt_tolerance, ccs_tolerance
     )
     df = perform_optimized_clustering(df, sparse_matrix)
+    df.to_csv("clustered_data.csv", index=False)
     df = extract_cluster_by_number(df, cluster_id=10)
     print(df)
