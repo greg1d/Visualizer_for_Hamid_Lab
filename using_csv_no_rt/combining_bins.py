@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from Binning import process_mass_ccs_data
+from Binning import process_mass_ccs_data_fixed_drift
 
 
 def combine_bins_numpy(df):
@@ -41,24 +41,37 @@ def combine_bins_numpy(df):
 
 
 if __name__ == "__main__":
-    df = process_mass_ccs_data(
-        ms1_file="using_csv_no_rt/Low_only.csv",
-        ms2_file="using_csv_no_rt/High_only.csv",
-        output_location="temp_sample.csv",
-        beta=0.138218,
-        tfix=-0.067817,
-        combine_dfs=True,
-        min_mass=50,
-        max_mass=2000,
-        mass_tolerance_ppm=10,
-        min_ccs=0,
-        max_ccs_factor=60,
-        ccs_tolerance=0.02,
-    )
+    ms1_file = "using_csv_no_rt/Low_only.csv"
+    ms2_file = "using_csv_no_rt/High_only.csv"
+    output_location = "test_sample.csv"
+    beta = 0.138218
+    tfix = -0.067817
 
-    # Ensure Mass Bin and CCS Bin exist
-    df["Mass Bin"] = df["Mass"]
-    df["CCS Bin"] = df["CCS"]
+    min_mass = 50
+    max_mass = 2000
+    mass_bin_width = 0.01
+
+    min_drift = 0
+    max_drift = 60
+    drift_bin_width = 0.04
+
+    min_abundance = 20
+
+    df = process_mass_ccs_data_fixed_drift(
+        ms1_file=ms1_file,
+        ms2_file=ms2_file,
+        output_location=output_location,
+        beta=beta,
+        tfix=tfix,
+        combine_dfs=True,
+        min_abundance=min_abundance,
+        min_mass=min_mass,
+        max_mass=max_mass,
+        mass_bin_width=mass_bin_width,
+        min_drift=min_drift,
+        max_drift=max_drift,
+        drift_bin_width=drift_bin_width,
+    )
 
     combined_df = combine_bins_numpy(df)
     combined_df.to_csv("xxx_sample_combined.csv", index=False)
