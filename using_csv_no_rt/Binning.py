@@ -1,42 +1,26 @@
 import numpy as np
 import pandas as pd
-from reading_in_csv import calculate_CCS, read_and_label
+from reading_in_csv import read_and_label
 
 
-def create_fixed_bins(min_value, max_value, ppm_tolerance):
+def create_fixed_bins(min_value, max_value, bin_width):
     """
-    Create reproducible mass bin edges using ppm-based widths.
+    Create reproducible mass bin edges using a fixed width (user-specified).
     Returns bin edges (array) and labels (string ranges).
     """
-    edges = [min_value]
-    value = min_value
-    while value < max_value:
-        width = value * ppm_tolerance / 1_000_000
-        value = min(value + width, max_value)
-        edges.append(value)
+    edges = np.arange(min_value, max_value + bin_width, bin_width)
     labels = [f"{edges[i]:.6f}–{edges[i + 1]:.6f}" for i in range(len(edges) - 1)]
-    return np.array(edges), labels
-
-
-def create_ccs_bins(min_ccs, max_ccs, ccs_tolerance):
-    """
-    Create CCS bins using percentage-based width.
-    """
-    edges = [min_ccs]
-    ccs = min_ccs
-    while ccs < max_ccs:
-        width = max(ccs * ccs_tolerance, 1e-12)  # avoid zero width
-        ccs = min(ccs + width, max_ccs)
-        edges.append(ccs)
-    labels = [f"{edges[i]:.6f}–{edges[i + 1]:.6f}" for i in range(len(edges) - 1)]
-    return np.array(edges), labels
+    return edges, labels
 
 
 def assign_bins(df, column_name, bin_edges, bin_labels):
     """
     Vectorized assignment of bins using pd.cut (unordered to avoid ValueError).
+    Converts the column to numeric first.
     """
     df = df.copy()
+    # Convert column to numeric
+    df[column_name] = pd.to_numeric(df[column_name], errors="coerce")
     df[f"{column_name} Bin"] = pd.cut(
         df[column_name],
         bins=bin_edges,
@@ -49,7 +33,59 @@ def assign_bins(df, column_name, bin_edges, bin_labels):
     return df
 
 
-def process_mass_ccs_data(
+def create_drift_bins(min_drift, max_drift, bin_width=0.04):
+    """
+    Create drift bins with a fixed width (e.g., 0.04 ms).
+    Returns bin edges and labels.
+    """
+    edges = np.arange(min_drift, max_drift + bin_width, bin_width)
+    labels = [f"{edges[i]:.4f}–{edges[i + 1]:.4f}" for i in range(len(edges) - 1)]
+    return edges, labels
+
+
+def assign_drift_bins_and_ccs(
+    df, beta, tfix, min_drift=0, max_drift=60, bin_width=0.04
+):
+    """
+    Assign drift bins and calculate CCS from drift bin centers.
+    """
+    # Create drift bins and assign
+    drift_edges, drift_labels = create_drift_bins(min_drift, max_drift, bin_width)
+    df = assign_bins(df, "Drift", drift_edges, drift_labels)
+
+    df = df.copy()
+
+    # Convert Categorical to string and then to numeric bin centers
+    def bin_center(cat):
+        if pd.isna(cat):
+            return np.nan
+        s = str(cat)
+        start, end = s.split("–")
+        return (float(start) + float(end)) / 2
+
+    df["Drift Bin Center"] = df["Drift Bin"].apply(bin_center)
+
+    # Ensure numeric dtype
+    df["Drift Bin Center"] = pd.to_numeric(df["Drift Bin Center"], errors="coerce")
+
+    # Calculate CCS safely (NaNs will propagate)
+    df["CCS"] = 1e-4 * (df["Drift Bin Center"] + tfix) ** beta
+
+    return df
+
+
+def filter_by_abundance(df, min_abundance=1):
+    """
+    Remove rows where Abundance (Intensity) is below min_abundance.
+    Ensures Abundance column is numeric.
+    """
+    df = df.copy()
+    df["Abundance"] = pd.to_numeric(df["Abundance"], errors="coerce")
+    df = df[df["Abundance"] >= min_abundance]
+    return df
+
+
+def process_mass_ccs_data_fixed_drift(
     ms1_file,
     ms2_file,
     output_location,
@@ -58,25 +94,23 @@ def process_mass_ccs_data(
     combine_dfs=True,
     min_mass=50,
     max_mass=1750,
-    mass_tolerance_ppm=10,
-    min_ccs=0,
-    max_ccs_factor=60,
-    ccs_tolerance=0.02,  # 2%
+    mass_bin_width=0.01,  # user-specified single value
+    min_drift=0,
+    max_drift=60,
+    drift_bin_width=0.04,
 ):
     # Read and combine CSVs
     df = read_and_label(ms1_file, ms2_file, combine_dfs=combine_dfs)
-
-    # Calculate CCS
-    df = calculate_CCS(df, beta, tfix)
+    df = filter_by_abundance(df, min_abundance=min_abundance)
 
     # --- Mass binning ---
-    mass_edges, mass_labels = create_fixed_bins(min_mass, max_mass, mass_tolerance_ppm)
+    mass_edges, mass_labels = create_fixed_bins(min_mass, max_mass, mass_bin_width)
     df = assign_bins(df, "Mass", mass_edges, mass_labels)
 
-    # --- CCS binning ---
-    max_ccs = max_mass * max_ccs_factor
-    ccs_edges, ccs_labels = create_ccs_bins(min_ccs, max_ccs, ccs_tolerance)
-    df = assign_bins(df, "CCS", ccs_edges, ccs_labels)
+    # --- Drift binning and CCS calculation ---
+    df = assign_drift_bins_and_ccs(
+        df, beta, tfix, min_drift, max_drift, drift_bin_width
+    )
 
     # Save output
     df.to_csv(output_location, index=False)
@@ -88,7 +122,6 @@ if __name__ == "__main__":
     # --- User-defined parameters ---
     ms1_file = "using_csv_no_rt/Low_only.csv"
     ms2_file = "using_csv_no_rt/High_only.csv"
-    combine_dfs = (True,)
     output_location = "test_sample.csv"
     beta = 0.138218
     tfix = -0.067817
@@ -96,14 +129,16 @@ if __name__ == "__main__":
     # Mass parameters
     min_mass = 50
     max_mass = 2000
-    mass_tolerance_ppm = 10  # e.g., 10 ppm
+    mass_bin_width = 0.01  # user-specified mass bin width
 
-    # CCS parameters
+    # Drift/CCS parameters
     min_drift = 0
-    max_drift = 60  # CCS max = max_mass * factor
-    ccs_tolerance = 0.02  # 2%
+    max_drift = 60
+    drift_bin_width = 0.04  # fixed width for drift binning
 
-    df = process_mass_ccs_data(
+    min_abundance = 20
+
+    df = process_mass_ccs_data_fixed_drift(
         ms1_file=ms1_file,
         ms2_file=ms2_file,
         output_location=output_location,
@@ -112,8 +147,8 @@ if __name__ == "__main__":
         combine_dfs=True,
         min_mass=min_mass,
         max_mass=max_mass,
-        mass_tolerance_ppm=mass_tolerance_ppm,
-        min_ccs=min_drift,
-        max_ccs_factor=max_drift,
-        ccs_tolerance=ccs_tolerance,
+        mass_bin_width=mass_bin_width,
+        min_drift=min_drift,
+        max_drift=max_drift,
+        drift_bin_width=drift_bin_width,
     )
