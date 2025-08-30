@@ -85,11 +85,23 @@ def process_mass_ccs_data(
 
 
 if __name__ == "__main__":
+    # --- User-defined parameters ---
     ms1_file = "using_csv_no_rt/Low_only.csv"
     ms2_file = "using_csv_no_rt/High_only.csv"
-    output_location = "xxx_sample.csv"
+    combine_dfs = (True,)
+    output_location = "test_sample.csv"
     beta = 0.138218
     tfix = -0.067817
+
+    # Mass parameters
+    min_mass = 50
+    max_mass = 2000
+    mass_tolerance_ppm = 10  # e.g., 10 ppm
+
+    # CCS parameters
+    min_drift = 0
+    max_drift = 60  # CCS max = max_mass * factor
+    ccs_tolerance = 0.02  # 2%
 
     df = process_mass_ccs_data(
         ms1_file=ms1_file,
@@ -98,4 +110,10 @@ if __name__ == "__main__":
         beta=beta,
         tfix=tfix,
         combine_dfs=True,
+        min_mass=min_mass,
+        max_mass=max_mass,
+        mass_tolerance_ppm=mass_tolerance_ppm,
+        min_ccs=min_drift,
+        max_ccs_factor=max_drift,
+        ccs_tolerance=ccs_tolerance,
     )
