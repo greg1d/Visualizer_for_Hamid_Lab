@@ -1,0 +1,9 @@
+Data file,C:\Users\Baker Lab 5\OneDrive - University of North Carolina at Chapel Hill\Academic\Data from Kimberley\O157_Lip_Allion_5bit_Pos_001_DI3.d.DeMP.d,,
+Frame range,1,470,
+Frame time range,0.071,9.966,minutes
+Drift units,Drift Time (ms),,
+Mass units,Mass-To-Charge (m/z),,
+Fragmentation Filter: Low Only,,,
+Mass,Drift,Abundance,
+591.63679,0.04,8,
+689.52797,0.04,3,
