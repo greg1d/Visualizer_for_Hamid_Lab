@@ -2,19 +2,22 @@ import pandas as pd
 
 
 def clean_csv(file_path, ms_mode):
-    # Read the CSV completely
-    raw = pd.read_csv(file_path, header=None)
+    # Skip all rows until the line with 'Mass,Drift,Abundance'
+    raw = pd.read_csv(
+        file_path, header=0, skiprows=lambda x: x < 6
+    )  # first 6 lines are metadata
 
-    # Keep only rows where first column is numeric (actual Mass values)
-    data = raw[pd.to_numeric(raw[0], errors="coerce").notnull()]
+    # Rename columns (just to be safe)
+    raw.columns = ["Mass", "Drift", "Abundance"]
 
-    # Reset column names to standard
-    data = data.iloc[:, :3]  # take first 3 columns only: Mass, Drift, Abundance
-    data.columns = ["Mass", "Drift", "Abundance"]
+    # Convert to numeric and drop any bad rows
+    for col in ["Mass", "Drift", "Abundance"]:
+        raw[col] = pd.to_numeric(raw[col], errors="coerce")
+    raw = raw.dropna(subset=["Mass", "Drift", "Abundance"])
 
     # Add MS Mode
-    data["MS Mode"] = ms_mode
-    return data
+    raw["MS Mode"] = ms_mode
+    return raw
 
 
 def read_and_label(ms1_file=None, ms2_file=None, combine_dfs=True):
