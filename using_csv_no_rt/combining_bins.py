@@ -3,67 +3,29 @@ import pandas as pd
 from Binning import process_mass_ccs_data_fixed_drift
 
 
-def combine_bins_numpy(df):
-    df["Abundance"] = pd.to_numeric(df["Abundance"], errors="coerce").fillna(0)
-    df["Mass Bin"] = pd.to_numeric(df["Mass Bin"], errors="coerce")
-    df["CCS Bin"] = pd.to_numeric(df["CCS Bin"], errors="coerce")
-
-    mass_bins = df["Mass Bin"].to_numpy()
-    ccs_bins = df["CCS Bin"].to_numpy()
-    abundance = df["Abundance"].to_numpy()
-    drift = df["Drift"].to_numpy()
-    ms_mode = df["MS Mode"].to_numpy()
-
-    keys = np.core.records.fromarrays([mass_bins, ccs_bins], names="mass_bin,ccs_bin")
-    unique_keys, inverse_indices = np.unique(keys, return_inverse=True)
-
-    summed_abundance = np.zeros(len(unique_keys))
-    first_drift = np.zeros(len(unique_keys))
-    first_ms_mode = np.zeros(len(unique_keys), dtype=ms_mode.dtype)
-
-    for i, idx in enumerate(inverse_indices):
-        summed_abundance[idx] += abundance[i]
-        if first_drift[idx] == 0 and first_ms_mode[idx] == 0:
-            first_drift[idx] = drift[i]
-            first_ms_mode[idx] = ms_mode[i]
-
-    combined_df = pd.DataFrame(
-        {
-            "Mass Bin": unique_keys.mass_bin,
-            "CCS Bin": unique_keys.ccs_bin,
-            "Abundance": summed_abundance,
-            "Drift": first_drift,
-            "MS Mode": first_ms_mode,
-        }
-    )
-
-    return combined_df
-
-
-if __name__ == "__main__":
-    ms1_file = "using_csv_no_rt/Low_only.csv"
-    ms2_file = "using_csv_no_rt/High_only.csv"
-    output_location = "test_sample.csv"
-    beta = 0.138218
-    tfix = -0.067817
-
-    min_mass = 50
-    max_mass = 2000
-    mass_bin_width = 0.01
-
-    min_drift = 0
-    max_drift = 60
-    drift_bin_width = 0.04
-
-    min_abundance = 20
-
+def process_and_combine(
+    ms1_file,
+    ms2_file=None,
+    output_location="output.csv",
+    beta=0.138218,
+    tfix=0,
+    min_mass=50,
+    max_mass=2000,
+    mass_bin_width=0.01,
+    min_drift=0,
+    max_drift=60,
+    drift_bin_width=0.04,
+    min_abundance=20,
+    combine_dfs=False,  # <-- new flag
+):
+    # Step 1: Process the raw MS data into bins
     df = process_mass_ccs_data_fixed_drift(
         ms1_file=ms1_file,
         ms2_file=ms2_file,
         output_location=output_location,
         beta=beta,
         tfix=tfix,
-        combine_dfs=True,
+        combine_dfs=combine_dfs,  # <-- pass through directly
         min_abundance=min_abundance,
         min_mass=min_mass,
         max_mass=max_mass,
@@ -73,6 +35,52 @@ if __name__ == "__main__":
         drift_bin_width=drift_bin_width,
     )
 
-    combined_df = combine_bins_numpy(df)
-    combined_df.to_csv("xxx_sample_combined.csv", index=False)
-    print("Saved combined output to xxx_sample_combined.csv")
+    # Step 2: Combine identical bins (Mass Bin + Drift Bin + MS Mode)
+    grouped = df.groupby(["Mass Bin", "Drift Bin", "MS Mode"], as_index=False)
+    combined = grouped.apply(
+        lambda g: pd.Series(
+            {
+                "Mass": np.average(g["Mass"], weights=g["Abundance"]),
+                "Drift": np.average(g["Drift"], weights=g["Abundance"]),
+                "Abundance": g["Abundance"].sum(),
+                "CCS (Å^2)": np.average(g["CCS (Å^2)"], weights=g["Abundance"]),
+            }
+        )
+    )
+
+    # Keep column order consistent
+    combined = combined[
+        ["Mass", "Drift", "Abundance", "MS Mode", "Mass Bin", "Drift Bin", "CCS (Å^2)"]
+    ]
+
+    # Round numeric columns
+    combined["Mass"] = combined["Mass"].round(4)
+    combined["Drift"] = combined["Drift"].round(2)
+    combined["Mass Bin"] = combined["Mass Bin"].round(4)
+    combined["Drift Bin"] = combined["Drift Bin"].round(2)
+    combined["CCS (Å^2)"] = combined["CCS (Å^2)"].round(2)
+
+    # Optionally convert Abundance to integer
+    combined["Abundance"] = combined["Abundance"].astype(int)
+    combined.to_csv(output_location, index=False)
+    return combined
+
+
+if __name__ == "__main__":
+    # Example with combine_dfs = True
+    df_final = process_and_combine(
+        ms1_file="using_csv_no_rt/Low_only.csv",
+        ms2_file="using_csv_no_rt/High_only.csv",
+        output_location="test_sample.csv",
+        beta=0.138218,
+        tfix=-0.067817,
+        min_mass=50,
+        max_mass=2000,
+        mass_bin_width=0.01,
+        min_drift=0,
+        max_drift=60,
+        drift_bin_width=0.04,
+        min_abundance=1000,
+        combine_dfs=False,  # <-- explicit choice
+    )
+    print(df_final)
